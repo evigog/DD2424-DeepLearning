@@ -63,6 +63,7 @@ def unpickle(file):
 
 
 def LoadBatch(filename, numoflabels):
+    filename = "cifar-10-batches-py/" + filename
     dict = unpickle(filename)
 
     #images
@@ -236,11 +237,13 @@ def Main():
         # X = images (d x N)
         # Y = one-hot labels (K x N)
         # y = labels (N)
-        X,Y,y = LoadBatch("data_batch_1", K)
+        Xtrain,Ytrain,ytrain = LoadBatch("data_batch_1", K)
+        Xval, Yval, yval = LoadBatch("data_batch_2", K)
+        Xtest, Ytest, ytest = LoadBatch("test_batch", K)
 
         # d = dim of each image
         # N = num of images
-        d, N = GetDimensions(X)
+        d, N = GetDimensions(Xtrain)
 
         # W = weights K x d
         # b = bias K x 1
@@ -249,7 +252,7 @@ def Main():
         # lamda = regularization parameter
         lamda = 0#.3
 
-        acc = ComputeCost(X, Y, W, b, lamda)
+        acc = ComputeCost(Xtrain, Ytrain, W, b, lamda)
         print(acc)
 
 
@@ -258,7 +261,7 @@ def Main():
         # gWnumSl, gbnumSl = ComputeGradsNumSlow(X, Y, W, b, lamda, 1e-6)
         # CheckGrads(gWnumSl, gbnumSl, gW, gb)
 
-        MiniBatchGD(X, Y, {"eta": 0.1, "n_batch":100, "epochs": 20}, W, b, lamda)
+        MiniBatchGD(Xtrain, Ytrain, {"eta": 0.1, "n_batch":100, "epochs": 20}, W, b, lamda)
 
         print("done")
 
