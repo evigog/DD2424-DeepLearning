@@ -191,7 +191,7 @@ def CheckGrads(WA, bA, WB, bB):
         if (diff > 1e-6):
             print(i, bA[i], bB[i], diff)
 
-def MiniBatchGD(X, Y, GDparams, W, b, lamda):
+def MiniBatchGD(X, Y, y, GDparams, W, b, lamda):
     """
     :param X: all the training images
     :param Y: the labels for the training images
@@ -210,6 +210,8 @@ def MiniBatchGD(X, Y, GDparams, W, b, lamda):
     if N % n_batch != 0:
         raise (NonInteger("non integer number of datapoints per step",1))
     steps_per_epoch = int(N / n_batch)
+    cost = []
+    accuracy = []
 
     for ep in range(n_epochs):
         for st in range(steps_per_epoch):
@@ -221,10 +223,19 @@ def MiniBatchGD(X, Y, GDparams, W, b, lamda):
             W = W - eta * grad_W
             b = b - eta * grad_b
 
-        print(ComputeCost(X, Y, W, b, lamda))
+        epoch_cost = ComputeCost(X, Y, W, b, lamda)
+        print(epoch_cost)
+        cost.append(epoch_cost)
+
+        epoch_accuracy = ComputeAccuracy(X, y, W, b)
+        accuracy.append(epoch_accuracy)
 
 
-    return (W, b)
+    return (W, b, cost, accuracy)
+
+def PlotGraph(x):
+    plt.plot(x)
+    plt.show()
 
 def Main():
     try:
@@ -241,6 +252,10 @@ def Main():
         Xval, Yval, yval = LoadBatch("data_batch_2", K)
         Xtest, Ytest, ytest = LoadBatch("test_batch", K)
 
+        # Xtrain = Xtrain[:, 0:200]
+        # Ytrain = Ytrain[:, 0:200]
+        # ytrain = ytrain[0:200]
+
         # d = dim of each image
         # N = num of images
         d, N = GetDimensions(Xtrain)
@@ -252,16 +267,17 @@ def Main():
         # lamda = regularization parameter
         lamda = 0#.3
 
-        acc = ComputeCost(Xtrain, Ytrain, W, b, lamda)
-        print(acc)
-
 
         #check
         # gW, gb = ComputeGradients(X, Y, W, b, lamda)
         # gWnumSl, gbnumSl = ComputeGradsNumSlow(X, Y, W, b, lamda, 1e-6)
         # CheckGrads(gWnumSl, gbnumSl, gW, gb)
 
-        MiniBatchGD(Xtrain, Ytrain, {"eta": 0.1, "n_batch":100, "epochs": 20}, W, b, lamda)
+        Wstar, bstar, cost, accuracy = MiniBatchGD(Xtrain, Ytrain, ytrain, {"eta": 0.1, "n_batch":100, "epochs": 100}, W, b, lamda)
+
+        PlotGraph(cost)
+        PlotGraph(accuracy)
+
 
         print("done")
 
