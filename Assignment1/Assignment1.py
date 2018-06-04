@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import random
 
 class NonInteger(Exception):
     def __init__(self, message, errors):
@@ -10,27 +11,33 @@ class NonInteger(Exception):
         # Now for your custom code...
         self.errors = errors
 
-def ComputeGradsNumSlow(X, Y, W, b, lamda, h):
+def ComputeGradsNumSlow(X, Y, W, b, lamda, h, how_many_to_calc):
+
+    # #select randomly the gradients we are going to calculate
+    # all = np.shape(X)[1]
+    # idx = random.sample(range(0, all), how_many_to_calc)
+    # Xcalc = np.copy(X[:, idx])
+    # Ycalc = np.copy(Y[:, idx])
+
     grad_W = np.zeros(np.shape(W))
     grad_b = np.zeros(np.shape(b))
-    for i in range(np.size(b)):
-        b_try = b
+    for i in range(np.shape(b)[0]):
+        b_try = np.copy(b)
         b_try[i] = b_try[i] - h
         c1 = ComputeCost(X, Y, W, b_try, lamda)
-        b_try = b
+        b_try = np.copy(b)
         b_try[i] = b_try[i] + h
         c2 = ComputeCost(X, Y, W, b_try, lamda)
-        grad_b[i] = np.divide((c2-c1),(h))
+        grad_b[i] = np.divide((c2-c1),(2*h))
 
-    for i in range(np.shape(W)[0]):
-        for j in range(np.shape(W)[1]):
-            W_try = W
-            W_try[i,j] = W_try[i,j] - h
-            c1 = ComputeCost(X, Y, W_try, b, lamda)
-            W_try = W
-            W_try[i,j] = W_try[i,j] + h
-            c2 = ComputeCost(X, Y, W_try, b, lamda)
-            grad_W[i,j] = np.divide((c2-c1),(h))
+    for j in range(np.shape(W)[1]):
+        W_try = np.copy(W)
+        W_try[:, j] = W_try[:, j] - h
+        c1 = ComputeCost(X, Y, W_try, b, lamda)
+        W_try = np.copy(W)
+        W_try[:, j] = W_try[:, j] + h
+        c2 = ComputeCost(X, Y, W_try, b, lamda)
+        grad_W[:, j] = np.divide((c2-c1),(2*h))
     return (grad_W, grad_b)
 
 # def ComputeGradsNum(X, Y, W, b, lamda, h):
@@ -170,25 +177,52 @@ def ComputeGradients(X, Y, W, b, lamda):
     for i in range(N):
         g = - (Y[:, i] - P[:, i]).reshape(-1, 1)
         grad_b += g
-        grad_W += np.matmul(g, X[:,i].reshape(1, -1))
+        for k in range(np.shape(W)[0]):
+            grad_W[k] += (g[k] * X[:, i])
 
     grad_b = grad_b/N
     grad_W = grad_W/N + 2 * lamda * W
 
     return (grad_W, grad_b)
 
+# def grad_check_sparse(f, x, analytic_grad, num_checks):
+#     grad_check_sparse(lambda _: compute_cost(Xbatches[batch], Ybatches[batch], W, b), W, gradW, 1)
+#   """
+#   Adapted from: http://cs231n.github.io/neural-networks-case-study/ and http://cs231n.github.io/neural-networks-3/#gradcheck
+#   sample a few random elements and only return numerical
+#   in this dimensions.
+#   """
+#   h = 1e-5
+#
+#   x.shape
+#   for i in xrange(num_checks):
+#     ix = tuple([randrange(m) for m in x.shape])
+#
+#     oldval = x[ix]
+#     x[ix] = oldval + h # increment by h
+#     fxph = f(x) # evaluate f(x + h)
+#     #print type(fxph), type(fxmh)
+#     x[ix] = oldval - h # increment by h
+#     fxmh = f(x) # evaluate f(x - h)
+#     x[ix] = oldval # reset
+#
+#     grad_numerical = (fxph - fxmh) / (2 * h)
+#     grad_analytic = analytic_grad[ix]
+#     rel_error = abs(grad_numerical - grad_analytic) / (abs(grad_numerical) + abs(grad_analytic))
+#     print 'numerical: %f analytic: %f, relative error: %e' % (grad_numerical, grad_analytic, rel_error)
+
 def CheckGrads(WA, bA, WB, bB):
     print("********\nW\n********")
     for i in range(np.shape(WA)[0]):
         for j in range(np.shape(WA)[1]):
             diff = abs(WA[i, j] - WB[i, j]) / max(abs(WA[i, j]), abs(WB[i, j]))
-            if (diff > 1e-6):
+            if (diff > 1e-7):
                 print(i, j, WA[i, j], WB[i, j], diff)
 
     print("********\nb\n********")
     for i in range(np.size(bA)):
-        diff = abs(bA[i] - bB[i]) / max(abs(bA[i]), abs(bB[i]))
-        if (diff > 1e-6):
+        diff = abs(bA[i] - bB[i]) / max(1e-6, abs(bA[i] + bB[i]))
+        if (diff > 1e-7):
             print(i, bA[i], bB[i], diff)
 
 def MiniBatchGD(X, Y, y, GDparams, W, b, lamda):
@@ -251,10 +285,10 @@ def Main():
         Xtrain,Ytrain,ytrain = LoadBatch("data_batch_1", K)
         Xval, Yval, yval = LoadBatch("data_batch_2", K)
         Xtest, Ytest, ytest = LoadBatch("test_batch", K)
-
-        # Xtrain = Xtrain[:, 0:200]
-        # Ytrain = Ytrain[:, 0:200]
-        # ytrain = ytrain[0:200]
+        #
+        # Xtrain = Xtrain[:, 200:203]
+        # Ytrain = Ytrain[:, 200:203]
+        # ytrain = ytrain[200:203]
 
         # d = dim of each image
         # N = num of images
@@ -265,15 +299,16 @@ def Main():
         b, W = InitParams(K, d)
 
         # lamda = regularization parameter
-        lamda = 0#.3
+        lamda = 0.3
 
 
         #check
-        # gW, gb = ComputeGradients(X, Y, W, b, lamda)
-        # gWnumSl, gbnumSl = ComputeGradsNumSlow(X, Y, W, b, lamda, 1e-6)
+        # gW, gb = ComputeGradients(Xtrain, Ytrain, W, b, lamda)
+        # gWnumSl, gbnumSl = ComputeGradsNumSlow(Xtrain, Ytrain, W, b, lamda, 1e-6, 100)
         # CheckGrads(gWnumSl, gbnumSl, gW, gb)
 
-        Wstar, bstar, cost, accuracy = MiniBatchGD(Xtrain, Ytrain, ytrain, {"eta": 0.1, "n_batch":100, "epochs": 100}, W, b, lamda)
+        #train
+        Wstar, bstar, cost, accuracy = MiniBatchGD(Xtrain, Ytrain, ytrain, {"eta": 0.1, "n_batch":500, "epochs": 40}, W, b, lamda)
 
         PlotGraph(cost)
         PlotGraph(accuracy)
