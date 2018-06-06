@@ -194,7 +194,7 @@ def CheckGrads(X, Y, W, b, lamda, how_many):
     CompareGrads(gWnumSl, gbnumSl, gW, gb)
 
 
-def MiniBatchGD(X, Y, y, GDparams, W, b, lamda):
+def MiniBatchGD(X, Y, GDparams, W, b, lamda):
     """
     :param X: all the training images
     :param Y: the labels for the training images
@@ -213,8 +213,9 @@ def MiniBatchGD(X, Y, y, GDparams, W, b, lamda):
     if N % n_batch != 0:
         raise (NonInteger("non integer number of datapoints per step",1))
     steps_per_epoch = int(N / n_batch)
-    cost = []
-    accuracy = []
+
+    allW = [W]
+    allb = [b]
 
     for ep in range(n_epochs):
         for st in range(steps_per_epoch):
@@ -226,25 +227,42 @@ def MiniBatchGD(X, Y, y, GDparams, W, b, lamda):
             W = W - eta * grad_W
             b = b - eta * grad_b
 
-        epoch_cost = ComputeCost(X, Y, W, b, lamda)
-        print(epoch_cost)
-        cost.append(epoch_cost)
+        allW.append(W)
+        allb.append(b)
 
-        epoch_accuracy = ComputeAccuracy(X, y, W, b)
-        accuracy.append(epoch_accuracy)
+        print("continuing...")
 
 
-    return (W, b, cost, accuracy)
+    return (W, b, allW, allb)
 
-def PlotGraph(x):
-    plt.plot(x)
+def PlotLoss(Xtrain, Ytrain, Xval, Yval, allW, allb, lamda):
+    train_cost = []
+    val_cost = []
+
+    #calculate costs
+    for i, W in enumerate(allW):
+        b = allb[i]
+
+        cost = ComputeCost(Xtrain, Ytrain, W, b, lamda)
+        train_cost.append(cost)
+        cost = ComputeCost(Xval, Yval, W, b, lamda)
+        val_cost.append(cost)
+
+    #plot
+    idx = np.arange(len(train_cost))
+    plt.plot(idx, train_cost, label="Training")
+    plt.plot(idx, val_cost, label="Validation")
+    plt.xlabel("Epochs")
+    plt.ylabel("Cost")
+    plt.legend()
+    plt.xticks(idx)
     plt.show()
 
 def Main():
     try:
         #mode = "check" for gradient checking
-        #mode = "default" for default training
-        mode = "check"
+        #       "default" for default training
+        mode = "default"
 
         # K =num of labels
         K = 10
@@ -257,8 +275,6 @@ def Main():
         Xtrain,Ytrain,ytrain = LoadBatch("data_batch_1", K)
         Xval, Yval, yval = LoadBatch("data_batch_2", K)
         Xtest, Ytest, ytest = LoadBatch("test_batch", K)
-        #
-
 
         # d = dim of each image
         # N = num of images
@@ -269,7 +285,6 @@ def Main():
         b, W = InitParams(K, d)
 
         # lamda = regularization parameter
-        # lamda = 0.3
         lamda = 0
 
 
@@ -278,16 +293,17 @@ def Main():
             CheckGrads(Xtrain, Ytrain, W, b, lamda, 3)
         else:
             #train
-            Wstar, bstar, cost, accuracy = MiniBatchGD(Xtrain, Ytrain, ytrain, {"eta": 0.01, "n_batch":100, "epochs": 40}, W, b, lamda)
-
-            PlotGraph(cost)
-            PlotGraph(accuracy)
+            Wstar, bstar, allW, allb = MiniBatchGD(Xtrain, Ytrain, {"eta": 0.01, "n_batch":100, "epochs": 40}, W, b, lamda)
+            #plot loss on training and validation dataset
+            PlotLoss(Xtrain, Ytrain, Xval, Yval, allW, allb, lamda)
+            #calculate accuracy on training dataset
+            test_accuracy = ComputeAccuracy(Xtest, ytest, Wstar, bstar)
+            print(test_accuracy)
 
 
         print("done")
 
     except ZeroDivisionError as err:
-
         print(err.args)
 
 
