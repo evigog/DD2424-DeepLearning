@@ -13,12 +13,6 @@ class NonInteger(Exception):
 
 def ComputeGradsNumSlow(X, Y, W, b, lamda, h):
 
-    # #select randomly the gradients we are going to calculate
-    # all = np.shape(X)[1]
-    # idx = random.sample(range(0, all), how_many_to_calc)
-    # Xcalc = np.copy(X[:, idx])
-    # Ycalc = np.copy(Y[:, idx])
-
     grad_W = np.zeros(np.shape(W))
     grad_b = np.zeros(np.shape(b))
     for i in range(np.shape(b)[0]):
@@ -30,14 +24,18 @@ def ComputeGradsNumSlow(X, Y, W, b, lamda, h):
         c2 = ComputeCost(X, Y, W, b_try, lamda)
         grad_b[i] = np.divide((c2-c1),(2*h))
 
-    for j in range(np.shape(W)[1]):
-        W_try = np.copy(W)
-        W_try[:, j] = W_try[:, j] - h
-        c1 = ComputeCost(X, Y, W_try, b, lamda)
-        W_try = np.copy(W)
-        W_try[:, j] = W_try[:, j] + h
-        c2 = ComputeCost(X, Y, W_try, b, lamda)
-        grad_W[:, j] = np.divide((c2-c1),(2*h))
+    for i in range(np.shape(W)[0]):
+        for j in range(np.shape(W)[1]):
+            W_try = np.copy(W)
+            W_try[i, j] = W_try[i, j] - h
+            c1 = ComputeCost(X, Y, W_try, b, lamda)
+            W_try = np.copy(W)
+            W_try[i, j] = W_try[i, j] + h
+            c2 = ComputeCost(X, Y, W_try, b, lamda)
+            grad_W[i, j] = np.divide((c2-c1),(2*h))
+
+        print("continuing...")
+
     return (grad_W, grad_b)
 
 def unpickle(file):
@@ -246,9 +244,9 @@ def Main():
         Xval, Yval, yval = LoadBatch("data_batch_2", K)
         Xtest, Ytest, ytest = LoadBatch("test_batch", K)
         #
-        # Xtrain = Xtrain[:, 200:203]
-        # Ytrain = Ytrain[:, 200:203]
-        # ytrain = ytrain[200:203]
+        Xtrain = Xtrain[:, 200:203]
+        Ytrain = Ytrain[:, 200:203]
+        ytrain = ytrain[200:203]
 
         # d = dim of each image
         # N = num of images
@@ -264,15 +262,15 @@ def Main():
 
 
         #check
-        # gW, gb = ComputeGradients(Xtrain, Ytrain, W, b, lamda)
-        # gWnumSl, gbnumSl = ComputeGradsNumSlow(Xtrain, Ytrain, W, b, lamda, 1e-6)
-        # CheckGrads(gWnumSl, gbnumSl, gW, gb)
+        gW, gb = ComputeGradients(Xtrain, Ytrain, W, b, lamda)
+        gWnumSl, gbnumSl = ComputeGradsNumSlow(Xtrain, Ytrain, W, b, lamda, 1e-6)
+        CheckGrads(gWnumSl, gbnumSl, gW, gb)
 
         #train
-        Wstar, bstar, cost, accuracy = MiniBatchGD(Xtrain, Ytrain, ytrain, {"eta": 0.01, "n_batch":100, "epochs": 40}, W, b, lamda)
-
-        PlotGraph(cost)
-        PlotGraph(accuracy)
+        # Wstar, bstar, cost, accuracy = MiniBatchGD(Xtrain, Ytrain, ytrain, {"eta": 0.01, "n_batch":100, "epochs": 40}, W, b, lamda)
+        #
+        # PlotGraph(cost)
+        # PlotGraph(accuracy)
 
 
         print("done")
