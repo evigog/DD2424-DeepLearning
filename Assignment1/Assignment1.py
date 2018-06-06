@@ -71,7 +71,7 @@ def GetDimensions(X):
 
 def InitParams(K, d):
     #make seed the same every time for testing purposes
-    np.random.seed(0)
+    # np.random.seed(0)
     b = np.random.normal(0, 0.01, (K,1))
     W = np.random.normal(0, 0.01, (K,d))
     return (b,W)
@@ -169,7 +169,7 @@ def ComputeGradients(X, Y, W, b, lamda):
 
     return (grad_W, grad_b)
 
-def CheckGrads(WA, bA, WB, bB):
+def CompareGrads(WA, bA, WB, bB):
     print("********\nW\n********")
     for i in range(np.shape(WA)[0]):
         for j in range(np.shape(WA)[1]):
@@ -179,9 +179,20 @@ def CheckGrads(WA, bA, WB, bB):
 
     print("********\nb\n********")
     for i in range(np.size(bA)):
-        diff = abs(bA[i] - bB[i]) / max(1e-6, abs(bA[i] + bB[i]))
+        diff = abs(bA[i] - bB[i]) / max(1e-6, abs(bA[i]) + abs(bB[i]))
         if (diff > 1e-7):
             print(i, bA[i], bB[i], diff)
+
+def CheckGrads(X, Y, W, b, lamda, how_many):
+    randomdatapoints = random.sample(range(0, np.shape(X)[1]), how_many)
+
+    X = X[:, randomdatapoints]
+    Y = Y[:, randomdatapoints]
+
+    gW, gb = ComputeGradients(X, Y, W, b, lamda)
+    gWnumSl, gbnumSl = ComputeGradsNumSlow(X, Y, W, b, lamda, 1e-6)
+    CompareGrads(gWnumSl, gbnumSl, gW, gb)
+
 
 def MiniBatchGD(X, Y, y, GDparams, W, b, lamda):
     """
@@ -231,6 +242,9 @@ def PlotGraph(x):
 
 def Main():
     try:
+        #mode = "check" for gradient checking
+        #mode = "default" for default training
+        mode = "check"
 
         # K =num of labels
         K = 10
@@ -244,9 +258,7 @@ def Main():
         Xval, Yval, yval = LoadBatch("data_batch_2", K)
         Xtest, Ytest, ytest = LoadBatch("test_batch", K)
         #
-        Xtrain = Xtrain[:, 200:203]
-        Ytrain = Ytrain[:, 200:203]
-        ytrain = ytrain[200:203]
+
 
         # d = dim of each image
         # N = num of images
@@ -261,16 +273,15 @@ def Main():
         lamda = 0
 
 
-        #check
-        gW, gb = ComputeGradients(Xtrain, Ytrain, W, b, lamda)
-        gWnumSl, gbnumSl = ComputeGradsNumSlow(Xtrain, Ytrain, W, b, lamda, 1e-6)
-        CheckGrads(gWnumSl, gbnumSl, gW, gb)
+        if mode == "check":
+            # check
+            CheckGrads(Xtrain, Ytrain, W, b, lamda, 3)
+        else:
+            #train
+            Wstar, bstar, cost, accuracy = MiniBatchGD(Xtrain, Ytrain, ytrain, {"eta": 0.01, "n_batch":100, "epochs": 40}, W, b, lamda)
 
-        #train
-        # Wstar, bstar, cost, accuracy = MiniBatchGD(Xtrain, Ytrain, ytrain, {"eta": 0.01, "n_batch":100, "epochs": 40}, W, b, lamda)
-        #
-        # PlotGraph(cost)
-        # PlotGraph(accuracy)
+            PlotGraph(cost)
+            PlotGraph(accuracy)
 
 
         print("done")
