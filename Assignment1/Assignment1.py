@@ -11,7 +11,13 @@ class NonInteger(Exception):
         # Now for your custom code...
         self.errors = errors
 
-def ComputeGradsNumSlow(X, Y, W, b, lamda, h, how_many_to_calc):
+def ComputeGradsNumSlow(X, Y, W, b, lamda, h):
+
+    # #select randomly the gradients we are going to calculate
+    # all = np.shape(X)[1]
+    # idx = random.sample(range(0, all), how_many_to_calc)
+    # Xcalc = np.copy(X[:, idx])
+    # Ycalc = np.copy(Y[:, idx])
 
     grad_W = np.zeros(np.shape(W))
     grad_b = np.zeros(np.shape(b))
@@ -259,7 +265,7 @@ def Main():
 
         #check
         # gW, gb = ComputeGradients(Xtrain, Ytrain, W, b, lamda)
-        # gWnumSl, gbnumSl = ComputeGradsNumSlow(Xtrain, Ytrain, W, b, lamda, 1e-6, 100)
+        # gWnumSl, gbnumSl = ComputeGradsNumSlow(Xtrain, Ytrain, W, b, lamda, 1e-6)
         # CheckGrads(gWnumSl, gbnumSl, gW, gb)
 
         #train
