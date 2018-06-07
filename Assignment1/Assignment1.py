@@ -235,7 +235,7 @@ def MiniBatchGD(X, Y, GDparams, W, b, lamda):
 
     return (W, b, allW, allb)
 
-def PlotLoss(Xtrain, Ytrain, Xval, Yval, allW, allb, lamda):
+def PlotLoss(Xtrain, Ytrain, Xval, Yval, allW, allb, lamda, eta):
     train_cost = []
     val_cost = []
 
@@ -253,16 +253,32 @@ def PlotLoss(Xtrain, Ytrain, Xval, Yval, allW, allb, lamda):
     plt.plot(idx, train_cost, label="Training")
     plt.plot(idx, val_cost, label="Validation")
     plt.xlabel("Epochs")
-    plt.ylabel("Cost")
+    plt.ylabel("Loss")
     plt.legend()
-    plt.xticks(idx)
+    plt.xticks([0, 10, 20, 30, 40])
+    plt.title("Loss development over epochs, using eta " + str(eta) + " and lambda " + str(lamda))
     plt.show()
+
+def VisualizeW(W):
+    for i in range(np.shape(W)[0]):
+        im = np.reshape(W[i, :], (32, 32, 3), order="F")
+        im = (im - np.amin(im)) / (np.amax(im) - np.amin(im))
+        im = np.transpose(im, (1,0,2))
+        plt.imshow(im, interpolation="none")
+        plt.show()
 
 def Main():
     try:
         #mode = "check" for gradient checking
         #       "default" for default training
         mode = "default"
+
+        #constants
+        # lamda = regularization parameter
+        lamda = 0
+        eta = 0.01
+        n_batch = 100
+        epochs = 40
 
         # K =num of labels
         K = 10
@@ -284,22 +300,20 @@ def Main():
         # b = bias K x 1
         b, W = InitParams(K, d)
 
-        # lamda = regularization parameter
-        lamda = 0
-
 
         if mode == "check":
             # check
             CheckGrads(Xtrain, Ytrain, W, b, lamda, 3)
         else:
             #train
-            Wstar, bstar, allW, allb = MiniBatchGD(Xtrain, Ytrain, {"eta": 0.01, "n_batch":100, "epochs": 40}, W, b, lamda)
+            Wstar, bstar, allW, allb = MiniBatchGD(Xtrain, Ytrain, {"eta": eta, "n_batch":n_batch, "epochs": epochs}, W, b, lamda)
             #plot loss on training and validation dataset
-            PlotLoss(Xtrain, Ytrain, Xval, Yval, allW, allb, lamda)
+            # PlotLoss(Xtrain, Ytrain, Xval, Yval, allW, allb, lamda, eta)
             #calculate accuracy on training dataset
-            test_accuracy = ComputeAccuracy(Xtest, ytest, Wstar, bstar)
-            print(test_accuracy)
-
+            # test_accuracy = ComputeAccuracy(Xtest, ytest, Wstar, bstar)
+            # print(test_accuracy)
+            #visualize weights
+            VisualizeW(Wstar)
 
         print("done")
 
