@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
 import numpy as np
 import random
 
@@ -70,7 +71,7 @@ def GetDimensions(X):
 
 
 def InitParams(K, d):
-    #make seed the same every time for testing purposes
+    #same seed every time for testing purposes
     # np.random.seed(0)
     b = np.random.normal(0, 0.01, (K,1))
     W = np.random.normal(0, 0.01, (K,d))
@@ -153,16 +154,11 @@ def ComputeGradients(X, Y, W, b, lamda):
     for i in range(N):
         Yi = Y[:, i].reshape((-1, 1))
         Pi = P[:, i].reshape((-1, 1))
-        Xi = X[:, i].reshape((-1, 1))
-
-        # diag_p = np.diagflat(Pi)
-        # g = - np.dot( (Yi.T / (np.dot(Yi.T, Pi))), (diag_p - np.dot(Pi, Pi.T) ))
 
         g = - (Yi - Pi)
         grad_b = grad_b + g
         grad_W = grad_W + g * X[:, i] #be careful!!! this is not matrix multiplication!!!
                                       # this multiplies each number in g with the corresponding row in X[:,i]
-
 
     grad_b = np.divide(grad_b, N)
     grad_W = np.divide(grad_W, N) + 2 * lamda * W
@@ -259,13 +255,19 @@ def PlotLoss(Xtrain, Ytrain, Xval, Yval, allW, allb, lamda, eta):
     plt.title("Loss development over epochs, using eta " + str(eta) + " and lambda " + str(lamda))
     plt.show()
 
-def VisualizeW(W):
+def VisualizeW(W, eta, lamda, epochs, batch):
+    fig, ax = plt.subplots(4, int(np.shape(W)[0]/2))
+    fig.suptitle("Learnt weights using eta " + str(eta) + ", lambda " + str(lamda) + ", " + str(epochs) + " epochs and batch of " + str(batch))
     for i in range(np.shape(W)[0]):
         im = np.reshape(W[i, :], (32, 32, 3), order="F")
         im = (im - np.amin(im)) / (np.amax(im) - np.amin(im))
         im = np.transpose(im, (1,0,2))
-        plt.imshow(im, interpolation="none")
-        plt.show()
+        row = int(i//(np.shape(W)[0]/2))
+        col = int(i%(np.shape(W)[0]/2))
+        ax[row, col].imshow(im, interpolation="none")
+        ax[row, col].set_yticklabels([])
+        ax[row, col].set_xticklabels([])
+    plt.show()
 
 def Main():
     try:
@@ -275,7 +277,8 @@ def Main():
 
         #constants
         # lamda = regularization parameter
-        lamda = 0
+        lamda = 1
+        # eta = learning rate
         eta = 0.01
         n_batch = 100
         epochs = 40
@@ -308,12 +311,12 @@ def Main():
             #train
             Wstar, bstar, allW, allb = MiniBatchGD(Xtrain, Ytrain, {"eta": eta, "n_batch":n_batch, "epochs": epochs}, W, b, lamda)
             #plot loss on training and validation dataset
-            # PlotLoss(Xtrain, Ytrain, Xval, Yval, allW, allb, lamda, eta)
+            PlotLoss(Xtrain, Ytrain, Xval, Yval, allW, allb, lamda, eta)
             #calculate accuracy on training dataset
-            # test_accuracy = ComputeAccuracy(Xtest, ytest, Wstar, bstar)
-            # print(test_accuracy)
+            test_accuracy = ComputeAccuracy(Xtest, ytest, Wstar, bstar)
+            print(test_accuracy)
             #visualize weights
-            VisualizeW(Wstar)
+            VisualizeW(Wstar, eta, lamda, epochs, n_batch)
 
         print("done")
 
