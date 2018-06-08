@@ -2,6 +2,8 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import numpy as np
 import random
+import os
+
 
 class NonInteger(Exception):
     def __init__(self, message, errors):
@@ -47,7 +49,8 @@ def unpickle(file):
 
 
 def LoadBatch(filename, numoflabels):
-    filename = "cifar-10-batches-py/" + filename
+    parentdir = os.path.abspath(os.path.join(os.getcwd(), os.pardir))
+    filename = parentdir + "/Assignment1/cifar-10-batches-py/" + filename
     dict = unpickle(filename)
 
     #images
@@ -61,6 +64,14 @@ def LoadBatch(filename, numoflabels):
 
     return (X, Y, y)
 
+def ToZeroMean(Xtrain, Xval, Xtest):
+    mean_X = np.mean(Xtrain, axis=0).reshape(1,-1)
+    Xtrain = Xtrain - mean_X
+    Xval = Xval - mean_X
+    Xtest = Xtest - mean_X
+    return Xtrain, Xval, Xtest
+
+
 def GetDimensions(X):
     #dim of each image
     d = np.shape(X)[0]
@@ -70,12 +81,14 @@ def GetDimensions(X):
     return (d, N)
 
 
-def InitParams(K, d):
+def InitParams(K1, K2, d):
     #same seed every time for testing purposes
     # np.random.seed(0)
-    b = np.random.normal(0, 0.01, (K,1))
-    W = np.random.normal(0, 0.01, (K,d))
-    return (b,W)
+    W1 = np.random.normal(0, 0.001, (K1, d))
+    W2 = np.random.normal(0, 0.001, (K2, K1))
+    b1 = np.zeros((K1, 1))
+    b2 = np.zeros((K2, 1))
+    return (W1, W2, b1, b2)
 
 def SoftMax(z):
     """
@@ -284,41 +297,47 @@ def Main():
         epochs = 40
 
         # K =num of labels
-        K = 10
+        K1 = 50
+        K2 = 10
 
         # N = num of input examples
         # d = dimension of each input example
         # X = images (d x N)
         # Y = one-hot labels (K x N)
         # y = labels (N)
-        Xtrain,Ytrain,ytrain = LoadBatch("data_batch_1", K)
-        Xval, Yval, yval = LoadBatch("data_batch_2", K)
-        Xtest, Ytest, ytest = LoadBatch("test_batch", K)
+        Xtrain,Ytrain,ytrain = LoadBatch("data_batch_1", K2)
+        Xval, Yval, yval = LoadBatch("data_batch_2", K2)
+        Xtest, Ytest, ytest = LoadBatch("test_batch", K2)
+
+        Xtrain, Xval, Xtest = ToZeroMean(Xtrain, Xval, Xtest)
+
 
         # d = dim of each image
         # N = num of images
         d, N = GetDimensions(Xtrain)
 
-        # W = weights K x d
-        # b = bias K x 1
-        b, W = InitParams(K, d)
+        # W1 = weights K1 x d
+        # b1 = bias K1 x 1
+        # W2 = weights K2 x K1
+        # b2 = bias K2 x 1
+        W1, W2, b1, b2 = InitParams(K1, K2, d)
 
 
-        if mode == "check":
-            # check
-            CheckGrads(Xtrain, Ytrain, W, b, lamda, 3)
-        else:
-            #train
-            Wstar, bstar, allW, allb = MiniBatchGD(Xtrain, Ytrain, {"eta": eta, "n_batch":n_batch, "epochs": epochs}, W, b, lamda)
-            #plot loss on training and validation dataset
-            PlotLoss(Xtrain, Ytrain, Xval, Yval, allW, allb, lamda, eta)
-            #calculate accuracy on training dataset
-            test_accuracy = ComputeAccuracy(Xtest, ytest, Wstar, bstar)
-            print(test_accuracy)
-            #visualize weights
-            VisualizeW(Wstar, eta, lamda, epochs, n_batch)
-
-        print("done")
+        # if mode == "check":
+        #     # check
+        #     CheckGrads(Xtrain, Ytrain, W, b, lamda, 3)
+        # else:
+        #     #train
+        #     Wstar, bstar, allW, allb = MiniBatchGD(Xtrain, Ytrain, {"eta": eta, "n_batch":n_batch, "epochs": epochs}, W, b, lamda)
+        #     #plot loss on training and validation dataset
+        #     PlotLoss(Xtrain, Ytrain, Xval, Yval, allW, allb, lamda, eta)
+        #     #calculate accuracy on training dataset
+        #     test_accuracy = ComputeAccuracy(Xtest, ytest, Wstar, bstar)
+        #     print(test_accuracy)
+        #     #visualize weights
+        #     VisualizeW(Wstar, eta, lamda, epochs, n_batch)
+        #
+        # print("done")
 
     except ZeroDivisionError as err:
         print(err.args)
