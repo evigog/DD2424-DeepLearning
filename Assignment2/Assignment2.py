@@ -97,15 +97,22 @@ def SoftMax(z):
     e = np.exp(z - np.max(z))
     return((e / e.sum(axis = 0)))
 
+def ReLU(s):
+    below_zero_indices = s < 0
+    s[below_zero_indices] = 0
+    return s
 
-def EvaluateClassifier(X, W, b):
+def EvaluateClassifier(X, W1, b1, W2, b2):
     """
+    apply forward pass and return
     the output probabilities of the classifier
     """
-    s = np.matmul(W, X) + b
-    P = SoftMax(s)
+    s1 = np.matmul(W1, X) + b1
+    h = ReLU(s1)
+    s2 = np.matmul(W2, h) + b2
+    P = SoftMax(s2)
 
-    return P
+    return P, h, s1
 
 def ComputeCost(X, Y, W, b, lamda):
     """
@@ -121,7 +128,7 @@ def ComputeCost(X, Y, W, b, lamda):
     d, N = GetDimensions(X)
     regularization = lamda * np.sum(np.power(W, 2))
 
-    P = EvaluateClassifier(X, W, b)
+    P, h, s1 = EvaluateClassifier(X, W, b)
     cross_entropy_loss = 0 - np.log(np.sum(np.prod((np.array(Y), P), axis=0), axis=0))
 
 
@@ -136,7 +143,7 @@ def ComputeAccuracy(X, y, W, b):
     b:
     acc: acc is a scalar value containing the accuracy.
     """
-    P = EvaluateClassifier(X, W, b)
+    P, h, s1 = EvaluateClassifier(X, W, b)
     predicitons = np.argmax(P, axis=0)
     correct = np.count_nonzero((y-predicitons) == 0)#because of the condition it actually counts the zeros
     all = np.size(predicitons)
@@ -146,7 +153,16 @@ def ComputeAccuracy(X, y, W, b):
 
     return acc
 
-def ComputeGradients(X, Y, W, b, lamda):
+def IndXPositive(x):
+    above_zero_indices = x > 0
+    below_zero_indices = x <= 0
+    x[above_zero_indices] = 1
+    x[below_zero_indices] = 0
+
+    return x
+
+
+def ComputeGradients(X, Y, W1, b1, W2, b2, lamda):
     """
     :param X: each column of X corresponds to an image and it has size d xn
     :param Y: each column of Y (Kx n) is the one-hot ground truth label for the corresponding column of X
@@ -156,27 +172,43 @@ def ComputeGradients(X, Y, W, b, lamda):
              grad_b is the gradient vector of the cost J relative to b and has size K x1 - same as b
     """
 
-    grad_W = np.zeros(np.shape(W))
-    grad_b = np.zeros(np.shape(b))
+    grad_W1 = np.zeros(np.shape(W1))
+    grad_b1 = np.zeros(np.shape(b1))
+    grad_W2 = np.zeros(np.shape(W2))
+    grad_b2 = np.zeros(np.shape(b2))
 
     # each column of P contains the probability for each label for the image in the corresponding column of X.
     # P has size Kx n
-    P = EvaluateClassifier(X, W, b)
+    # h is the hidden layer output of the network during the forward pass
+    # h has size K1 x N
+    P, h, s1 = EvaluateClassifier(X, W1, b1, W2, b2)
 
     N = np.shape(X)[1]
     for i in range(N):
         Yi = Y[:, i].reshape((-1, 1))
         Pi = P[:, i].reshape((-1, 1))
+        Xi = X[:, i].reshape((-1,1))
+        hi = h[:, i].reshape((-1, 1))
+        si = s1[:, i]
 
-        g = - (Yi - Pi)
-        grad_b = grad_b + g
-        grad_W = grad_W + g * X[:, i] #be careful!!! this is not matrix multiplication!!!
-                                      # this multiplies each number in g with the corresponding row in X[:,i]
+        g = - np.transpose(Yi - Pi)
+        grad_b2 = grad_b2 + np.transpose(g)
+        grad_W2 = grad_W2 +  np.matmul(np.transpose(g), np.transpose(hi))
 
-    grad_b = np.divide(grad_b, N)
-    grad_W = np.divide(grad_W, N) + 2 * lamda * W
+        g = np.matmul(g, W2)
+        g = np.matmul(g, np.diag(IndXPositive(si))) #???? -> gia to matmul kai to transpose
 
-    return (grad_W, grad_b)
+        grad_b1 = grad_b1 + np.transpose(g)
+        grad_W1 = grad_W1 + np.matmul(np.transpose(g), np.transpose(Xi)) #???? -> gia to matmul kai to transpose
+
+
+    grad_b1 = np.divide(grad_b1, N)
+    grad_W1 = np.divide(grad_W1, N) + 2 * lamda * W1
+
+    grad_b2 = np.divide(grad_b2, N)
+    grad_W2 = np.divide(grad_W2, N) + 2 * lamda * W2
+
+    return (grad_W1, grad_b1, grad_W2, grad_b2)
 
 def CompareGrads(WA, bA, WB, bB):
     print("********\nW\n********")
@@ -321,7 +353,8 @@ def Main():
         # W2 = weights K2 x K1
         # b2 = bias K2 x 1
         W1, W2, b1, b2 = InitParams(K1, K2, d)
-
+        ComputeGradients(Xtrain, Ytrain, W1, b1, W2, b2, lamda)
+        pass
 
         # if mode == "check":
         #     # check
@@ -336,8 +369,8 @@ def Main():
         #     print(test_accuracy)
         #     #visualize weights
         #     VisualizeW(Wstar, eta, lamda, epochs, n_batch)
-        #
-        # print("done")
+
+        print("done")
 
     except ZeroDivisionError as err:
         print(err.args)
