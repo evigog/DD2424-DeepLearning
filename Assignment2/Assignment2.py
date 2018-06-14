@@ -238,7 +238,6 @@ def CheckGrads(X, Y, W1, b1, W2, b2, lamda, how_many):
     W1 = W1[:, 100:300]
 
     gW1, gb1, gW2, gb2 = ComputeGradients(X, Y, W1, b1, W2, b2, lamda)
-    # gWnumSl1, gbnumSl1, gWnumSl2, gbnumSl2 = ComputeGradsKevin(X, Y, W1, b1, W2, b2, lamda, 1e-5)
     gWnumSl1, gbnumSl1, gWnumSl2, gbnumSl2 = ComputeGradsNumSlow(X, Y, W1, b1, W2, b2, lamda, 1e-5)
     CompareGrads(gWnumSl1, gbnumSl1, gW1, gb1)
     CompareGrads(gWnumSl2, gbnumSl2, gW2, gb2)
@@ -257,6 +256,7 @@ def MiniBatchGD(X, Y, GDparams):
     eta = GDparams["eta"]
     n_epochs = GDparams["epochs"]
     lamda = GDparams["lamda"]
+    rho = GDparams["rho"]
 
     W1 = GDparams["W1"]
     b1 = GDparams["b1"]
@@ -275,17 +275,31 @@ def MiniBatchGD(X, Y, GDparams):
     allW2 = [W2]
     allb2 = [b2]
 
+    momW1 = np.zeros(np.shape(W1))
+    momW2 = np.zeros(np.shape(W2))
+    momb1 = np.zeros(np.shape(b1))
+    momb2 = np.zeros(np.shape(b2))
+
     for ep in range(n_epochs):
         for st in range(steps_per_epoch):
             batch_start = st * n_batch
             batch_end = batch_start + n_batch
             Xbatch = X[:, batch_start:batch_end]
             Ybatch = Y[:, batch_start:batch_end]
-            grad_W1, grad_b1, grad_W2, grad_b2 = ComputeGradients(Xbatch, Ybatch, W1, b1, W2, b2, lamda) #????
-            W1 = W1 - eta * grad_W1 #????
-            b1 = b1 - eta * grad_b1 #????
-            W2 = W2 - eta * grad_W2 #????
-            b2 = b2 - eta * grad_b2 #????
+            grad_W1, grad_b1, grad_W2, grad_b2 = ComputeGradients(Xbatch, Ybatch, W1, b1, W2, b2, lamda)
+
+            #applying momentum to the update
+            momW1 = rho * momW1 + eta * grad_W1
+            W1 = W1 - momW1
+
+            momb1 = rho * momb1 + eta * grad_b1
+            b1 = b1 - momb1
+
+            momW2 = rho * momW2 + eta * grad_W2
+            W2 = W2 - momW2
+
+            momb2 = rho * momb2 + eta * grad_b2
+            b2 = b2 - eta * grad_b2
 
         allW1.append(W1)
         allb1.append(b1)
@@ -342,7 +356,7 @@ def Main():
         #mode = "check" for gradient checking
         #       "sanitycheck" to try overfitting 100 datapoints
         #       "default" for default training
-        mode = "check"#"default"#"sanitycheck"
+        mode = "sanitycheck"#"default"#"sanitycheck"
 
         #constants
         # lamda = regularization parameter
@@ -381,7 +395,7 @@ def Main():
             # check
             CheckGrads(Xtrain, Ytrain, W1, b1, W2, b2, lamda, 4)
         elif mode == "sanitycheck":
-
+            #try to overfit 100 datapoints
             Xtrain, Ytrain, ytrain = Xtrain[:, :100], Ytrain[:, :100], ytrain[:100]
             Xval, Yval, yval = Xval[:, :100], Yval[:, :100], yval[:100]
             Xtest, Ytest, ytest = Xtest[:, :100], Ytest[:, :100], ytest[:100]
@@ -391,6 +405,7 @@ def Main():
             W1star, b1star, W2star, b2star, allW1, allb1, allW2, allb2 = MiniBatchGD(Xtrain, Ytrain,
                                                                                      {"eta": 0.05, "n_batch": 10,
                                                                                       "epochs": 200, "lamda": 0,
+                                                                                      "rho": 0.9,
                                                                                       "W1": W1, "b1": b1, "W2": W2,
                                                                                       "b2": b2})
             # plot loss on training and validation dataset
@@ -400,10 +415,11 @@ def Main():
             print("train accuracy:", train_accuracy)
 
         else:
-        #     #train
+            #train
             W1star, b1star, W2star, b2star, allW1, allb1, allW2, allb2 = MiniBatchGD(Xtrain, Ytrain,
                                                                                      {"eta": eta, "n_batch":n_batch,
                                                                                       "epochs": epochs, "lamda": lamda,
+                                                                                      "rho": 0.9,
                                                                                       "W1": W1, "b1": b1, "W2": W2,
                                                                                       "b2": b2})
             #plot loss on training and validation dataset
