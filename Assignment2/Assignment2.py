@@ -14,32 +14,47 @@ class NonInteger(Exception):
         # Now for your custom code...
         self.errors = errors
 
-def ComputeGradsNumSlow(X, Y, W, b, lamda, h):
+def ComputeGradsNumSlow(X, Y, W1, b1, W2, b2, lamb, h):
+    m = W2.shape[1]
+    K = W2.shape[0]
+    d = X.shape[0]
 
-    grad_W = np.zeros(np.shape(W))
-    grad_b = np.zeros(np.shape(b))
-    for i in range(np.shape(b)[0]):
-        b_try = np.copy(b)
-        b_try[i] = b_try[i] - h
-        c1 = ComputeCost(X, Y, W, b_try, lamda)
-        b_try = np.copy(b)
-        b_try[i] = b_try[i] + h
-        c2 = ComputeCost(X, Y, W, b_try, lamda)
-        grad_b[i] = np.divide((c2-c1),(2*h))
+    grad_W1 = np.zeros((m, d))
+    grad_b1 = np.zeros((m, 1))
+    grad_W2 = np.zeros((K, m))
+    grad_b2 = np.zeros((K, 1))
+    c = ComputeCost(X, Y, W1, b1, W2, b2, lamb)
 
-    for i in range(np.shape(W)[0]):
-        for j in range(np.shape(W)[1]):
-            W_try = np.copy(W)
-            W_try[i, j] = W_try[i, j] - h
-            c1 = ComputeCost(X, Y, W_try, b, lamda)
-            W_try = np.copy(W)
-            W_try[i, j] = W_try[i, j] + h
-            c2 = ComputeCost(X, Y, W_try, b, lamda)
-            grad_W[i, j] = np.divide((c2-c1),(2*h))
+    for i in range(len(b1)):
+        b_try = np.copy(b1)
+        b_try[i] += h
 
-        print("continuing...")
+        c2 = ComputeCost(X, Y, W1, b_try, W2, b2, lamb)
+        grad_b1[i] = (c2 - c) / h
 
-    return (grad_W, grad_b)
+    for i in range(W1.shape[0]):
+        for j in range(W1.shape[1]):
+            W_try = np.copy(W1)
+            W_try[i][j] += h
+            c2 = ComputeCost(X, Y, W_try, b1, W2, b2, lamb)
+            grad_W1[i][j] = (c2 - c) / h
+
+    for i in range(len(b2)):
+        b_try = np.copy(b2)
+        b_try[i] += h
+
+        c2 = ComputeCost(X, Y, W1, b1, W2, b_try, lamb)
+        grad_b2[i] = (c2 - c) / h
+
+    for i in range(W2.shape[0]):
+        for j in range(W2.shape[1]):
+            W_try = np.copy(W2)
+            W_try[i][j] += h
+            c2 = ComputeCost(X, Y, W1, b1, W_try, b2, lamb)
+            grad_W2[i][j] = (c2 - c) / h
+    return grad_W1, grad_b1, grad_W2, grad_b2
+
+    return grad_W1, grad_b1, grad_W2, grad_b2
 
 def unpickle(file):
     import pickle
@@ -83,7 +98,7 @@ def GetDimensions(X):
 
 def InitParams(K1, K2, d):
     #same seed every time for testing purposes
-    # np.random.seed(0)
+    # np.random.seed(123)
     W1 = np.random.normal(0, 0.001, (K1, d))
     W2 = np.random.normal(0, 0.001, (K2, K1))
     b1 = np.zeros((K1, 1))
@@ -98,8 +113,7 @@ def SoftMax(z):
     return((e / e.sum(axis = 0)))
 
 def ReLU(s):
-    below_zero_indices = s < 0
-    s[below_zero_indices] = 0
+    s = np.maximum(s, 0)
     return s
 
 def EvaluateClassifier(X, W1, b1, W2, b2):
@@ -107,14 +121,14 @@ def EvaluateClassifier(X, W1, b1, W2, b2):
     apply forward pass and return
     the output probabilities of the classifier
     """
-    s1 = np.matmul(W1, X) + b1
+    s1 = np.dot(W1, X) + b1
     h = ReLU(s1)
-    s2 = np.matmul(W2, h) + b2
+    s2 = np.dot(W2, h) + b2
     P = SoftMax(s2)
 
     return P, h, s1
 
-def ComputeCost(X, Y, W, b, lamda):
+def ComputeCost(X, Y, W1, b1, W2, b2, lamda):
     """
     X: each column of it corresponds to an image and the whole matrix has size dx n
     Y: each column of Y (Kx n) is the one-hot ground truth label for the corresponding column of X
@@ -126,16 +140,16 @@ def ComputeCost(X, Y, W, b, lamda):
             the ground truth labels and the regularization term on W
     """
     d, N = GetDimensions(X)
-    regularization = lamda * np.sum(np.power(W, 2))
+    regularization = lamda * (np.sum(np.power(W1, 2)) + np.sum(np.power(W2, 2)))
 
-    P, h, s1 = EvaluateClassifier(X, W, b)
+    P, h, s1 = EvaluateClassifier(X, W1, b1, W2, b2)
     cross_entropy_loss = 0 - np.log(np.sum(np.prod((np.array(Y), P), axis=0), axis=0))
-
 
     J = (1/N) * np.sum(cross_entropy_loss) + regularization
     return J
 
-def ComputeAccuracy(X, y, W, b):
+
+def ComputeAccuracy(X, y, W1, b1, W2, b2):
     """
     X: each column of X corresponds to an image and X has size dn.
     y: Y is the vector of ground truth labels of length n.
@@ -143,7 +157,7 @@ def ComputeAccuracy(X, y, W, b):
     b:
     acc: acc is a scalar value containing the accuracy.
     """
-    P, h, s1 = EvaluateClassifier(X, W, b)
+    P, h, s1 = EvaluateClassifier(X, W1, b1, W2, b2)
     predicitons = np.argmax(P, axis=0)
     correct = np.count_nonzero((y-predicitons) == 0)#because of the condition it actually counts the zeros
     all = np.size(predicitons)
@@ -187,19 +201,20 @@ def ComputeGradients(X, Y, W1, b1, W2, b2, lamda):
     for i in range(N):
         Yi = Y[:, i].reshape((-1, 1))
         Pi = P[:, i].reshape((-1, 1))
-        Xi = X[:, i].reshape((-1,1))
+        Xi = X[:, i].reshape((-1, 1))
         hi = h[:, i].reshape((-1, 1))
         si = s1[:, i]
 
-        g = - np.transpose(Yi - Pi)
-        grad_b2 = grad_b2 + np.transpose(g)
-        grad_W2 = grad_W2 +  np.matmul(np.transpose(g), np.transpose(hi))
+        g = Pi - Yi
+        grad_b2 = grad_b2 + g
+        grad_W2 = grad_W2 + np.dot(g, np.transpose(hi))
 
-        g = np.matmul(g, W2)
-        g = np.matmul(g, np.diag(IndXPositive(si))) #???? -> gia to matmul kai to transpose
+        #propagate error backwards
+        g = np.dot(np.transpose(W2), g)
+        g = np.dot(np.diag(IndXPositive(si)), g)
 
-        grad_b1 = grad_b1 + np.transpose(g)
-        grad_W1 = grad_W1 + np.matmul(np.transpose(g), np.transpose(Xi)) #???? -> gia to matmul kai to transpose
+        grad_b1 = grad_b1 + g
+        grad_W1 = grad_W1 + np.dot(g, np.transpose(Xi)) #???? -> gia to matmul kai to transpose
 
 
     grad_b1 = np.divide(grad_b1, N)
@@ -214,28 +229,31 @@ def CompareGrads(WA, bA, WB, bB):
     print("********\nW\n********")
     for i in range(np.shape(WA)[0]):
         for j in range(np.shape(WA)[1]):
-            diff = abs(WA[i, j] - WB[i, j]) / max(abs(WA[i, j]), abs(WB[i, j]))
-            if (diff > 1e-7):
+            diff = abs(WA[i, j] - WB[i, j]) / max(1e-6, (abs(WA[i, j])+ abs(WB[i, j])))
+            if (diff > 1e-4):
                 print(i, j, WA[i, j], WB[i, j], diff)
 
     print("********\nb\n********")
     for i in range(np.size(bA)):
-        diff = abs(bA[i] - bB[i]) / max(1e-6, abs(bA[i]) + abs(bB[i]))
-        if (diff > 1e-7):
+        diff = abs(bA[i] - bB[i]) / max(1e-6, (abs(bA[i]) + abs(bB[i])))
+        if (diff > 1e-4):
             print(i, bA[i], bB[i], diff)
 
-def CheckGrads(X, Y, W, b, lamda, how_many):
+def CheckGrads(X, Y, W1, b1, W2, b2, lamda, how_many):
     randomdatapoints = random.sample(range(0, np.shape(X)[1]), how_many)
 
-    X = X[:, randomdatapoints]
+    X = X[100:300, randomdatapoints]
     Y = Y[:, randomdatapoints]
+    W1 = W1[:, 100:300]
 
-    gW, gb = ComputeGradients(X, Y, W, b, lamda)
-    gWnumSl, gbnumSl = ComputeGradsNumSlow(X, Y, W, b, lamda, 1e-6)
-    CompareGrads(gWnumSl, gbnumSl, gW, gb)
+    gW1, gb1, gW2, gb2 = ComputeGradients(X, Y, W1, b1, W2, b2, lamda)
+    # gWnumSl1, gbnumSl1, gWnumSl2, gbnumSl2 = ComputeGradsKevin(X, Y, W1, b1, W2, b2, lamda, 1e-5)
+    gWnumSl1, gbnumSl1, gWnumSl2, gbnumSl2 = ComputeGradsNumSlow(X, Y, W1, b1, W2, b2, lamda, 1e-5)
+    CompareGrads(gWnumSl1, gbnumSl1, gW1, gb1)
+    CompareGrads(gWnumSl2, gbnumSl2, gW2, gb2)
 
 
-def MiniBatchGD(X, Y, GDparams, W, b, lamda):
+def MiniBatchGD(X, Y, GDparams):
     """
     :param X: all the training images
     :param Y: the labels for the training images
@@ -247,6 +265,12 @@ def MiniBatchGD(X, Y, GDparams, W, b, lamda):
     n_batch = GDparams["n_batch"]
     eta = GDparams["eta"]
     n_epochs = GDparams["epochs"]
+    lamda = GDparams["lamda"]
+
+    W1 = GDparams["W1"]
+    b1 = GDparams["b1"]
+    W2 = GDparams["W2"]
+    b2 = GDparams["b2"]
 
     #all datapoints
     N = np.shape(X)[1]
@@ -255,8 +279,10 @@ def MiniBatchGD(X, Y, GDparams, W, b, lamda):
         raise (NonInteger("non integer number of datapoints per step",1))
     steps_per_epoch = int(N / n_batch)
 
-    allW = [W]
-    allb = [b]
+    allW1 = [W1]
+    allb1 = [b1]
+    allW2 = [W2]
+    allb2 = [b2]
 
     for ep in range(n_epochs):
         for st in range(steps_per_epoch):
@@ -264,29 +290,35 @@ def MiniBatchGD(X, Y, GDparams, W, b, lamda):
             batch_end = batch_start + n_batch
             Xbatch = X[:, batch_start:batch_end]
             Ybatch = Y[:, batch_start:batch_end]
-            grad_W, grad_b = ComputeGradients(Xbatch, Ybatch, W, b, lamda)
-            W = W - eta * grad_W
-            b = b - eta * grad_b
+            grad_W1, grad_b1, grad_W2, grad_b2 = ComputeGradients(Xbatch, Ybatch, W1, b1, W2, b2, lamda) #????
+            W1 = W1 - eta * grad_W1 #????
+            b1 = b1 - eta * grad_b1 #????
+            W2 = W2 - eta * grad_W2 #????
+            b2 = b2 - eta * grad_b2 #????
 
-        allW.append(W)
-        allb.append(b)
+        allW1.append(W1)
+        allb1.append(b1)
+        allW2.append(W2)
+        allb2.append(b2)
 
         print("continuing...")
 
 
-    return (W, b, allW, allb)
+    return (W1, b1, W2, b2, allW1, allb1, allW2, allb2)
 
-def PlotLoss(Xtrain, Ytrain, Xval, Yval, allW, allb, lamda, eta):
+def PlotLoss(Xtrain, Ytrain, Xval, Yval, allW1, allb1, allW2, allb2, lamda, eta):
     train_cost = []
     val_cost = []
 
     #calculate costs
-    for i, W in enumerate(allW):
-        b = allb[i]
+    for i, W1 in enumerate(allW1):
+        b1 = allb1[i]
+        W2 = allW2[i]
+        b2 = allb2[i]
 
-        cost = ComputeCost(Xtrain, Ytrain, W, b, lamda)
+        cost = ComputeCost(Xtrain, Ytrain, W1, b1, W2, b2, lamda)
         train_cost.append(cost)
-        cost = ComputeCost(Xval, Yval, W, b, lamda)
+        cost = ComputeCost(Xval, Yval, W1, b1, W2, b2, lamda)
         val_cost.append(cost)
 
     #plot
@@ -296,37 +328,38 @@ def PlotLoss(Xtrain, Ytrain, Xval, Yval, allW, allb, lamda, eta):
     plt.xlabel("Epochs")
     plt.ylabel("Loss")
     plt.legend()
-    plt.xticks([0, 10, 20, 30, 40])
+    # plt.xticks([0, 10, 20, 30, 40])
     plt.title("Loss development over epochs, using eta " + str(eta) + " and lambda " + str(lamda))
     plt.show()
 
-def VisualizeW(W, eta, lamda, epochs, batch):
-    fig, ax = plt.subplots(4, int(np.shape(W)[0]/2))
-    fig.suptitle("Learnt weights using eta " + str(eta) + ", lambda " + str(lamda) + ", " + str(epochs) + " epochs and batch of " + str(batch))
-    for i in range(np.shape(W)[0]):
-        im = np.reshape(W[i, :], (32, 32, 3), order="F")
-        im = (im - np.amin(im)) / (np.amax(im) - np.amin(im))
-        im = np.transpose(im, (1,0,2))
-        row = int(i//(np.shape(W)[0]/2))
-        col = int(i%(np.shape(W)[0]/2))
-        ax[row, col].imshow(im, interpolation="none")
-        ax[row, col].set_yticklabels([])
-        ax[row, col].set_xticklabels([])
-    plt.show()
+# def VisualizeW(W, eta, lamda, epochs, batch):
+#     fig, ax = plt.subplots(4, int(np.shape(W)[0]/2))
+#     fig.suptitle("Learnt weights using eta " + str(eta) + ", lambda " + str(lamda) + ", " + str(epochs) + " epochs and batch of " + str(batch))
+#     for i in range(np.shape(W)[0]):
+#         im = np.reshape(W[i, :], (32, 32, 3), order="F")
+#         im = (im - np.amin(im)) / (np.amax(im) - np.amin(im))
+#         im = np.transpose(im, (1,0,2))
+#         row = int(i//(np.shape(W)[0]/2))
+#         col = int(i%(np.shape(W)[0]/2))
+#         ax[row, col].imshow(im, interpolation="none")
+#         ax[row, col].set_yticklabels([])
+#         ax[row, col].set_xticklabels([])
+#     plt.show()
 
 def Main():
     try:
         #mode = "check" for gradient checking
+        #       "sanitycheck" to try overfitting 100 datapoints
         #       "default" for default training
-        mode = "default"
+        mode = "check"#"default"#"sanitycheck"
 
         #constants
         # lamda = regularization parameter
         lamda = 0
         # eta = learning rate
-        eta = 0.01
-        n_batch = 100
-        epochs = 40
+        eta = 0.05
+        n_batch = 10
+        epochs = 200
 
         # K =num of labels
         K1 = 50
@@ -341,9 +374,6 @@ def Main():
         Xval, Yval, yval = LoadBatch("data_batch_2", K2)
         Xtest, Ytest, ytest = LoadBatch("test_batch", K2)
 
-        Xtrain, Xval, Xtest = ToZeroMean(Xtrain, Xval, Xtest)
-
-
         # d = dim of each image
         # N = num of images
         d, N = GetDimensions(Xtrain)
@@ -353,18 +383,41 @@ def Main():
         # W2 = weights K2 x K1
         # b2 = bias K2 x 1
         W1, W2, b1, b2 = InitParams(K1, K2, d)
-        ComputeGradients(Xtrain, Ytrain, W1, b1, W2, b2, lamda)
-        pass
+        Xtrain, Xval, Xtest = ToZeroMean(Xtrain, Xval, Xtest)
 
-        # if mode == "check":
-        #     # check
-        #     CheckGrads(Xtrain, Ytrain, W, b, lamda, 3)
-        # else:
+
+        if mode == "check":
+            # check
+            CheckGrads(Xtrain, Ytrain, W1, b1, W2, b2, lamda, 4)
+        elif mode == "sanitycheck":
+
+            Xtrain, Ytrain, ytrain = Xtrain[:, :100], Ytrain[:, :100], ytrain[:100]
+            Xval, Yval, yval = Xval[:, :100], Yval[:, :100], yval[:100]
+            Xtest, Ytest, ytest = Xtest[:, :100], Ytest[:, :100], ytest[:100]
+
+            Xtrain, Xval, Xtest = ToZeroMean(Xtrain, Xval, Xtest)
+
+            W1star, b1star, W2star, b2star, allW1, allb1, allW2, allb2 = MiniBatchGD(Xtrain, Ytrain,
+                                                                                     {"eta": 0.05, "n_batch": 10,
+                                                                                      "epochs": 200, "lamda": 0,
+                                                                                      "W1": W1, "b1": b1, "W2": W2,
+                                                                                      "b2": b2})
+            # plot loss on training and validation dataset
+            PlotLoss(Xtrain, Ytrain, Xval, Yval, allW1, allb1, allW2, allb2, lamda, eta)
+            # calculate accuracy on training dataset
+            train_accuracy = ComputeAccuracy(Xtrain, ytrain, W1star, b1star, W2star, b2star)
+            print("train accuracy:", train_accuracy)
+
+        else:
         #     #train
-        #     Wstar, bstar, allW, allb = MiniBatchGD(Xtrain, Ytrain, {"eta": eta, "n_batch":n_batch, "epochs": epochs}, W, b, lamda)
-        #     #plot loss on training and validation dataset
-        #     PlotLoss(Xtrain, Ytrain, Xval, Yval, allW, allb, lamda, eta)
-        #     #calculate accuracy on training dataset
+            W1star, b1star, W2star, b2star, allW1, allb1, allW2, allb2 = MiniBatchGD(Xtrain, Ytrain,
+                                                                                     {"eta": eta, "n_batch":n_batch,
+                                                                                      "epochs": epochs, "lamda": lamda,
+                                                                                      "W1": W1, "b1": b1, "W2": W2,
+                                                                                      "b2": b2})
+            #plot loss on training and validation dataset
+            PlotLoss(Xtrain, Ytrain, Xval, Yval, allW1, allb1, allW2, allb2, lamda, eta)
+            #calculate accuracy on test dataset
         #     test_accuracy = ComputeAccuracy(Xtest, ytest, Wstar, bstar)
         #     print(test_accuracy)
         #     #visualize weights
