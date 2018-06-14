@@ -3,6 +3,7 @@ import matplotlib.gridspec as gridspec
 import numpy as np
 import random
 import os
+from copy import deepcopy
 
 
 class NonInteger(Exception):
@@ -15,46 +16,36 @@ class NonInteger(Exception):
         self.errors = errors
 
 def ComputeGradsNumSlow(X, Y, W1, b1, W2, b2, lamb, h):
-    m = W2.shape[1]
-    K = W2.shape[0]
-    d = X.shape[0]
+    W = [W1, W2]
+    b = [b1, b2]
 
-    grad_W1 = np.zeros((m, d))
-    grad_b1 = np.zeros((m, 1))
-    grad_W2 = np.zeros((K, m))
-    grad_b2 = np.zeros((K, 1))
-    c = ComputeCost(X, Y, W1, b1, W2, b2, lamb)
+    #initialize grads
+    grad_W = []
+    grad_b = []
 
-    for i in range(len(b1)):
-        b_try = np.copy(b1)
-        b_try[i] += h
+    for i in range(len(W)):
+        Wnew = np.zeros(np.shape(W[i]))
+        grad_W.append(Wnew)
+        bnew = np.zeros(np.shape(b[i]))
+        grad_b.append(bnew)
 
-        c2 = ComputeCost(X, Y, W1, b_try, W2, b2, lamb)
-        grad_b1[i] = (c2 - c) / h
+    c = ComputeCost(X, Y, W[0], b[0], W[1], b[1], lamb)
 
-    for i in range(W1.shape[0]):
-        for j in range(W1.shape[1]):
-            W_try = np.copy(W1)
-            W_try[i][j] += h
-            c2 = ComputeCost(X, Y, W_try, b1, W2, b2, lamb)
-            grad_W1[i][j] = (c2 - c) / h
+    for k in range(len(W)):
+        for i in range(len(b[k])):
+            b_try = deepcopy(b)
+            b_try[k][i] += h
+            c2 = ComputeCost(X, Y, W[0], b_try[0], W[1], b_try[1], lamb)
+            grad_b[k][i] = (c2 - c) / h
 
-    for i in range(len(b2)):
-        b_try = np.copy(b2)
-        b_try[i] += h
+        for i in range(W[k].shape[0]):
+            for j in range(W[k].shape[1]):
+                W_try = deepcopy(W)
+                W_try[k][i, j] += h
+                c2 = ComputeCost(X, Y, W_try[0], b[0], W_try[1], b[1], lamb)
+                grad_W[k][i, j] = (c2 - c) / h
 
-        c2 = ComputeCost(X, Y, W1, b1, W2, b_try, lamb)
-        grad_b2[i] = (c2 - c) / h
-
-    for i in range(W2.shape[0]):
-        for j in range(W2.shape[1]):
-            W_try = np.copy(W2)
-            W_try[i][j] += h
-            c2 = ComputeCost(X, Y, W1, b1, W_try, b2, lamb)
-            grad_W2[i][j] = (c2 - c) / h
-    return grad_W1, grad_b1, grad_W2, grad_b2
-
-    return grad_W1, grad_b1, grad_W2, grad_b2
+    return grad_W[0], grad_b[0], grad_W[1], grad_b[1]
 
 def unpickle(file):
     import pickle
