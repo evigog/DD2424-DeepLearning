@@ -73,8 +73,12 @@ def LoadBatch(filename, numoflabels):
 def ToZeroMean(Xtrain, Xval, Xtest):
     mean_X = np.mean(Xtrain, axis=0).reshape(1,-1)
     Xtrain = Xtrain - mean_X
-    Xval = Xval - mean_X
-    Xtest = Xtest - mean_X
+
+    neededmeans = np.shape(Xval)[1]
+    Xval = Xval - mean_X[:, :neededmeans]
+
+    neededmeans = np.shape(Xtest)[1]
+    Xtest = Xtest - mean_X[:, :neededmeans]
     return Xtrain, Xval, Xtest
 
 
@@ -257,6 +261,7 @@ def MiniBatchGD(X, Y, GDparams):
     n_epochs = GDparams["epochs"]
     lamda = GDparams["lamda"]
     rho = GDparams["rho"]
+    lr_decay = GDparams["lr_decay"]
 
     W1 = GDparams["W1"]
     b1 = GDparams["b1"]
@@ -301,6 +306,8 @@ def MiniBatchGD(X, Y, GDparams):
             momb2 = rho * momb2 + eta * grad_b2
             b2 = b2 - eta * grad_b2
 
+        eta = lr_decay * eta
+
         allW1.append(W1)
         allb1.append(b1)
         allW2.append(W2)
@@ -333,50 +340,60 @@ def PlotLoss(Xtrain, Ytrain, Xval, Yval, allW1, allb1, allW2, allb2, lamda, eta)
     plt.xlabel("Epochs")
     plt.ylabel("Loss")
     plt.legend()
-    # plt.xticks([0, 10, 20, 30, 40])
     plt.title("Loss development over epochs, using eta " + str(eta) + " and lambda " + str(lamda))
-    plt.show()
+    # plt.show()
+    filename = "eta" + str(eta) + "lamda" + str(lamda) + ".png"
+    plt.savefig(filename)
+    print("saved file", filename)
+    plt.clf()
 
-# def VisualizeW(W, eta, lamda, epochs, batch):
-#     fig, ax = plt.subplots(4, int(np.shape(W)[0]/2))
-#     fig.suptitle("Learnt weights using eta " + str(eta) + ", lambda " + str(lamda) + ", " + str(epochs) + " epochs and batch of " + str(batch))
-#     for i in range(np.shape(W)[0]):
-#         im = np.reshape(W[i, :], (32, 32, 3), order="F")
-#         im = (im - np.amin(im)) / (np.amax(im) - np.amin(im))
-#         im = np.transpose(im, (1,0,2))
-#         row = int(i//(np.shape(W)[0]/2))
-#         col = int(i%(np.shape(W)[0]/2))
-#         ax[row, col].imshow(im, interpolation="none")
-#         ax[row, col].set_yticklabels([])
-#         ax[row, col].set_xticklabels([])
-#     plt.show()
+    return (train_cost[-1], val_cost[-1])
+
+def OpenAllData(num_of_labels):
+    X, Y, y = LoadBatch("data_batch_1", num_of_labels)
+    X2, Y2, y2 = LoadBatch("data_batch_2", num_of_labels)
+    X3, Y3, y3 = LoadBatch("data_batch_3", num_of_labels)
+    X4, Y4, y4 = LoadBatch("data_batch_4", num_of_labels)
+    X5, Y5, y5 = LoadBatch("data_batch_5", num_of_labels)
+
+    X = np.concatenate((X, X2, X3, X4, X5), axis=1)
+    Y = np.concatenate((Y, Y2, Y3, Y4, Y5), axis=1)
+    y = np.concatenate((y, y2, y3, y4, y5))
+
+    return X, Y, y
 
 def Main():
     try:
         #mode = "check" for gradient checking
         #       "sanitycheck" to try overfitting 100 datapoints
+        #       "search" for searching the best hyperparameters
         #       "default" for default training
-        mode = "sanitycheck"#"default"#"sanitycheck"
+        mode = "default"#"sanitycheck"
 
         #constants
         # lamda = regularization parameter
-        lamda = 0
+        lamda = 5e-4
         # eta = learning rate
-        eta = 0.05
-        n_batch = 10
-        epochs = 200
+        eta = 0.0159
+        n_batch = 100
+        epochs = 30
+        rho = 0.9
+        lr_decay = 0.95
 
         # K =num of labels
         K1 = 50
         K2 = 10
 
-        # N = num of input examples
-        # d = dimension of each input example
-        # X = images (d x N)
-        # Y = one-hot labels (K x N)
-        # y = labels (N)
-        Xtrain,Ytrain,ytrain = LoadBatch("data_batch_1", K2)
-        Xval, Yval, yval = LoadBatch("data_batch_2", K2)
+        X, Y, y = OpenAllData(K2)
+
+        Xtrain = X[:, 0:-1000]
+        Ytrain = Y[:, 0:-1000]
+        ytrain = y[0:-1000]
+
+        Xval = X[:, -1000:]
+        Yval = Y[:, -1000:]
+        yval = y[-1000:]
+
         Xtest, Ytest, ytest = LoadBatch("test_batch", K2)
 
         # d = dim of each image
@@ -387,25 +404,34 @@ def Main():
         # b1 = bias K1 x 1
         # W2 = weights K2 x K1
         # b2 = bias K2 x 1
-        W1, W2, b1, b2 = InitParams(K1, K2, d)
         Xtrain, Xval, Xtest = ToZeroMean(Xtrain, Xval, Xtest)
 
 
         if mode == "check":
             # check
+            W1, W2, b1, b2 = InitParams(K1, K2, d)
             CheckGrads(Xtrain, Ytrain, W1, b1, W2, b2, lamda, 4)
         elif mode == "sanitycheck":
             #try to overfit 100 datapoints
+
+            Xtrain, Ytrain, ytrain = LoadBatch("data_batch_1", K2)
+            Xval, Yval, yval = LoadBatch("data_batch_2", K2)
+            Xtest, Ytest, ytest = LoadBatch("test_batch", K2)
+
             Xtrain, Ytrain, ytrain = Xtrain[:, :100], Ytrain[:, :100], ytrain[:100]
             Xval, Yval, yval = Xval[:, :100], Yval[:, :100], yval[:100]
             Xtest, Ytest, ytest = Xtest[:, :100], Ytest[:, :100], ytest[:100]
 
+            d, N = GetDimensions(Xtrain)
+
             Xtrain, Xval, Xtest = ToZeroMean(Xtrain, Xval, Xtest)
+
+            W1, W2, b1, b2 = InitParams(K1, K2, d)
 
             W1star, b1star, W2star, b2star, allW1, allb1, allW2, allb2 = MiniBatchGD(Xtrain, Ytrain,
                                                                                      {"eta": 0.05, "n_batch": 10,
                                                                                       "epochs": 200, "lamda": 0,
-                                                                                      "rho": 0.9,
+                                                                                      "rho": rho, "lr_decay": lr_decay,
                                                                                       "W1": W1, "b1": b1, "W2": W2,
                                                                                       "b2": b2})
             # plot loss on training and validation dataset
@@ -414,21 +440,80 @@ def Main():
             train_accuracy = ComputeAccuracy(Xtrain, ytrain, W1star, b1star, W2star, b2star)
             print("train accuracy:", train_accuracy)
 
+        elif mode == "search":
+            #search for best parameters
+
+            Xtrain, Ytrain, ytrain = LoadBatch("data_batch_1", K2)
+            Xval, Yval, yval = LoadBatch("data_batch_2", K2)
+            Xtest, Ytest, ytest = LoadBatch("test_batch", K2)
+
+            d, N = GetDimensions(Xtrain)
+
+            Xtrain, Xval, Xtest = ToZeroMean(Xtrain, Xval, Xtest)
+
+            #uniformly log-initialize etas in the range found with coarse search
+            #different experiment initializations
+
+            # es = np.random.uniform(-3, -1, 15)
+            # ls = np.random.uniform(-7, 3, 10)
+
+            # es = np.random.uniform(-3, -2, 15)
+            # ls = np.random.uniform(-8, -2, 10)
+
+            # es = np.random.uniform(0.013, 0.026, 15)
+            # es = np.sort(es)
+            # ls = np.random.uniform(-6, -1, 10)
+            # ls = np.sort(ls)
+
+            # es = [0.013, 0.014, 0.015, 0.016, 0.017, 0.018, 0.019, 0.02, 0.021]
+            # ls = [-8, -7, -6, -5, -4, -3]
+
+            es = [0.0155, 0.0157, 0.0159, 0.0161, 0.0163, 0.0165]
+            ls = [1e-4, 5e-4, 1e-5, 5e-5]
+            # es = [0.0155, 0.0156, 0.0157, 0.0158, 0.0159, 0.016, 0.0161, 0.0162, 0.0163, 0.0164, 0.0165]
+            # ls = [5e-6, 6e-6, 7e-6, 8e-6, 9e-6, 1e-5, 2e-5, 3e-5, 4e-5, 5e-5]
+            # es = [0.0166, 0.0167, 0.0168, 0.0169, 0.017, 0.0171, 0.0172, 0.0173, 0.0174, 0.0175, 0.0176, 0.0177]
+            # ls = [5e-5, 7e-5]
+            for thee in es:
+                # eta = 5 * (10 ** thee)
+                eta = thee
+                for thel in ls:
+                    # lamda = 10 ** thel
+                    lamda = thel
+
+                    W1, W2, b1, b2 = InitParams(K1, K2, d)
+
+                    W1star, b1star, W2star, b2star, allW1, allb1, allW2, allb2 = MiniBatchGD(Xtrain, Ytrain,
+                                                                                             {"eta": eta, "n_batch":n_batch,
+                                                                                              "epochs": epochs, "lamda": lamda,
+                                                                                              "rho": rho, "lr_decay": lr_decay,
+                                                                                              "W1": W1, "b1": b1, "W2": W2,
+                                                                                              "b2": b2})
+                    #calculate accuracy on test dataset
+                    valid_accuracy = ComputeAccuracy(Xval, yval, W1star, b1star, W2star, b2star)
+                    #save in file
+                    file = open("thefineresttraincosts.txt", "a")
+                    file.write("\n" + "eta: " + str(eta) + "    lamda: " + str(lamda) +
+                               "    validation accuracy: " + str(valid_accuracy))
+                    file.close()
         else:
-            #train
+            #default training
+            W1, W2, b1, b2 = InitParams(K1, K2, d)
+
             W1star, b1star, W2star, b2star, allW1, allb1, allW2, allb2 = MiniBatchGD(Xtrain, Ytrain,
-                                                                                     {"eta": eta, "n_batch":n_batch,
-                                                                                      "epochs": epochs, "lamda": lamda,
-                                                                                      "rho": 0.9,
+                                                                                     {"eta": eta,
+                                                                                      "n_batch": n_batch,
+                                                                                      "epochs": epochs,
+                                                                                      "lamda": lamda,
+                                                                                      "rho": rho,
+                                                                                      "lr_decay": lr_decay,
                                                                                       "W1": W1, "b1": b1, "W2": W2,
                                                                                       "b2": b2})
-            #plot loss on training and validation dataset
+            # plot loss on training and validation dataset
             PlotLoss(Xtrain, Ytrain, Xval, Yval, allW1, allb1, allW2, allb2, lamda, eta)
-            #calculate accuracy on test dataset
-        #     test_accuracy = ComputeAccuracy(Xtest, ytest, Wstar, bstar)
-        #     print(test_accuracy)
-        #     #visualize weights
-        #     VisualizeW(Wstar, eta, lamda, epochs, n_batch)
+            # calculate accuracy on test dataset
+            testacc = ComputeAccuracy(Xtest, ytest, W1star, b1star, W2star, b2star)
+            print("TEST ACCURACY:", testacc)
 
         print("done")
 
