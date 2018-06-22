@@ -42,7 +42,7 @@ def ComputeGradsNum(X, Y, W, b, lamb, h):
                 c2 = ComputeCost(X, Y, W_try[0], b[0], W_try[1], b[1], lamb)
                 grad_W[k][i, j] = (c2 - c) / h
 
-    return grad_W[0], grad_b[0], grad_W[1], grad_b[1]
+    return grad_W, grad_b
 
 def unpickle(file):
     import pickle
@@ -231,21 +231,25 @@ def ComputeGradients(X, Y, W, b, lamda):
         #progressing from second-to-last to first
         for l in range(layers-2, -1, -1):
 
-            Xi = X[:, i].reshape((-1, 1))
             si = s[l][:, i]
+            if l == 0:
+                hi = X[:, i].reshape((-1, 1))
+            else:
+                hi = h[l-1][:, i].reshape((-1, 1))
+
 
             #propagate error backwards
             g = np.dot(np.transpose(W[l+1]), g)
             g = np.dot(np.diag(IndXPositive(si)), g)
 
             grad_b[l] = grad_b[l] + g
-            grad_W[l] = grad_W[l] + np.dot(g, np.transpose(Xi))
+            grad_W[l] = grad_W[l] + np.dot(g, np.transpose(hi))
 
     for l in range(layers):
         grad_b[l] = np.divide(grad_b[l], N)
         grad_W[l] = np.divide(grad_W[l], N) + 2 * lamda * W[l]
 
-    return (grad_W[0], grad_b[0], grad_W[1], grad_b[1])
+    return (grad_W, grad_b)
 
 def CompareGrads(WA, bA, WB, bB):
     print("********\nW\n********")
@@ -268,10 +272,10 @@ def CheckGrads(X, Y, W, b, lamda, how_many):
     Y = Y[:, randomdatapoints]
     W[0] = W[0][:, 0:35]
 
-    gW1, gb1, gW2, gb2 = ComputeGradients(X, Y, W, b, lamda)
-    gWnumSl1, gbnumSl1, gWnumSl2, gbnumSl2 = ComputeGradsNum(X, Y, W, b, lamda, 1e-5)
-    CompareGrads(gWnumSl1, gbnumSl1, gW1, gb1)
-    CompareGrads(gWnumSl2, gbnumSl2, gW2, gb2)
+    gW, gb = ComputeGradients(X, Y, W, b, lamda)
+    gWnumSl, gbnumSl = ComputeGradsNum(X, Y, W, b, lamda, 1e-5)
+    for l in range(len(gW)):
+        CompareGrads(gWnumSl[l], gbnumSl[l], gW[l], gb[l])
 
 
 def MiniBatchGD(X, Y, GDparams):
