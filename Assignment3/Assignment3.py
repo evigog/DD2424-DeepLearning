@@ -15,10 +15,7 @@ class NonInteger(Exception):
         # Now for your custom code...
         self.errors = errors
 
-def ComputeGradsNumSlow(X, Y, W1, b1, W2, b2, lamb, h):
-    W = [W1, W2]
-    b = [b1, b2]
-
+def ComputeGradsNum(X, Y, W, b, lamb, h):
     #initialize grads
     grad_W = []
     grad_b = []
@@ -91,14 +88,19 @@ def GetDimensions(X):
     return (d, N)
 
 
-def InitParams(K1, K2, d):
+def InitParams(nodes):
     #same seed every time for testing purposes
-    # np.random.seed(123)
-    W1 = np.random.normal(0, 0.001, (K1, d))
-    W2 = np.random.normal(0, 0.001, (K2, K1))
-    b1 = np.zeros((K1, 1))
-    b2 = np.zeros((K2, 1))
-    return (W1, W2, b1, b2)
+    np.random.seed(123)
+    W = []
+    b = []
+    for i, nodesnum in enumerate(nodes):
+        if i == 0:
+            continue
+        Wi = np.random.normal(0, 0.001, (nodes[i], nodes[i-1]))
+        W.append(Wi)
+        bi = np.zeros((nodes[i], 1))
+        b.append(bi)
+    return (W, b)
 
 def SoftMax(z):
     """
@@ -116,12 +118,29 @@ def EvaluateClassifier(X, W1, b1, W2, b2):
     apply forward pass and return
     the output probabilities of the classifier
     """
-    s1 = np.dot(W1, X) + b1
-    h = ReLU(s1)
-    s2 = np.dot(W2, h) + b2
-    P = SoftMax(s2)
+    W = [W1, W2]
+    b = [b1, b2]
+    h = [X]
+    s = []
 
-    return P, h, s1
+    for i in range(len(W)):
+        si = np.dot(W[i], h[-1]) + b[i]
+        s.append(si)
+        hi = ReLU(si)
+        h.append(hi)
+
+    #in the last layer apply softmax
+    P = SoftMax(s[-1])
+
+    #detach X from h list (was appended just to help generalisation)
+    h.pop(0)
+
+    # s1 = np.dot(W1, X) + b1
+    # h = ReLU(s1)
+    # s2 = np.dot(W2, h) + b2
+    # P = SoftMax(s2)
+
+    return P, h, s
 
 def ComputeCost(X, Y, W1, b1, W2, b2, lamda):
     """
@@ -171,7 +190,7 @@ def IndXPositive(x):
     return x
 
 
-def ComputeGradients(X, Y, W1, b1, W2, b2, lamda):
+def ComputeGradients(X, Y, W, b, lamda):
     """
     :param X: each column of X corresponds to an image and it has size d xn
     :param Y: each column of Y (Kx n) is the one-hot ground truth label for the corresponding column of X
@@ -181,68 +200,76 @@ def ComputeGradients(X, Y, W1, b1, W2, b2, lamda):
              grad_b is the gradient vector of the cost J relative to b and has size K x1 - same as b
     """
 
-    grad_W1 = np.zeros(np.shape(W1))
-    grad_b1 = np.zeros(np.shape(b1))
-    grad_W2 = np.zeros(np.shape(W2))
-    grad_b2 = np.zeros(np.shape(b2))
+    #initialize gradients
+    layers = len(W)
+
+    grad_W = []
+    grad_b = []
+    for i in range(layers):
+        grad_W.append(np.zeros(np.shape(W[i])))
+        grad_b.append(np.zeros(np.shape(b[i])))
 
     # each column of P contains the probability for each label for the image in the corresponding column of X.
     # P has size Kx n
     # h is the hidden layer output of the network during the forward pass
     # h has size K1 x N
-    P, h, s1 = EvaluateClassifier(X, W1, b1, W2, b2)
+    P, h, s = EvaluateClassifier(X, W[0], b[0], W[1], b[1])
 
     N = np.shape(X)[1]
     for i in range(N):
+        #last layer
         Yi = Y[:, i].reshape((-1, 1))
         Pi = P[:, i].reshape((-1, 1))
-        Xi = X[:, i].reshape((-1, 1))
-        hi = h[:, i].reshape((-1, 1))
-        si = s1[:, i]
+        hi = h[-2][:, i].reshape((-1, 1))
 
         g = Pi - Yi
-        grad_b2 = grad_b2 + g
-        grad_W2 = grad_W2 + np.dot(g, np.transpose(hi))
 
-        #propagate error backwards
-        g = np.dot(np.transpose(W2), g)
-        g = np.dot(np.diag(IndXPositive(si)), g)
+        grad_b[-1] = grad_b[-1] + g
+        grad_W[-1] = grad_W[-1] + np.dot(g, np.transpose(hi))
 
-        grad_b1 = grad_b1 + g
-        grad_W1 = grad_W1 + np.dot(g, np.transpose(Xi)) #???? -> gia to matmul kai to transpose
+        #for the next layers
+        #progressing from second-to-last to first
+        for l in range(layers-2, -1, -1):
 
+            Xi = X[:, i].reshape((-1, 1))
+            si = s[l][:, i]
 
-    grad_b1 = np.divide(grad_b1, N)
-    grad_W1 = np.divide(grad_W1, N) + 2 * lamda * W1
+            #propagate error backwards
+            g = np.dot(np.transpose(W[l+1]), g)
+            g = np.dot(np.diag(IndXPositive(si)), g)
 
-    grad_b2 = np.divide(grad_b2, N)
-    grad_W2 = np.divide(grad_W2, N) + 2 * lamda * W2
+            grad_b[l] = grad_b[l] + g
+            grad_W[l] = grad_W[l] + np.dot(g, np.transpose(Xi))
 
-    return (grad_W1, grad_b1, grad_W2, grad_b2)
+    for l in range(layers):
+        grad_b[l] = np.divide(grad_b[l], N)
+        grad_W[l] = np.divide(grad_W[l], N) + 2 * lamda * W[l]
+
+    return (grad_W[0], grad_b[0], grad_W[1], grad_b[1])
 
 def CompareGrads(WA, bA, WB, bB):
     print("********\nW\n********")
     for i in range(np.shape(WA)[0]):
         for j in range(np.shape(WA)[1]):
             diff = abs(WA[i, j] - WB[i, j]) / max(1e-6, (abs(WA[i, j])+ abs(WB[i, j])))
-            if (diff > 1e-4):
+            if (diff > 1e-5):
                 print(i, j, WA[i, j], WB[i, j], diff)
 
     print("********\nb\n********")
     for i in range(np.size(bA)):
         diff = abs(bA[i] - bB[i]) / max(1e-6, (abs(bA[i]) + abs(bB[i])))
-        if (diff > 1e-4):
+        if (diff > 1e-5):
             print(i, bA[i], bB[i], diff)
 
-def CheckGrads(X, Y, W1, b1, W2, b2, lamda, how_many):
-    randomdatapoints = random.sample(range(0, np.shape(X)[1]), how_many)
+def CheckGrads(X, Y, W, b, lamda, how_many):
+    randomdatapoints = [1,2]#random.sample(range(0, np.shape(X)[1]), how_many)
 
-    X = X[100:300, randomdatapoints]
+    X = X[0:35, randomdatapoints]
     Y = Y[:, randomdatapoints]
-    W1 = W1[:, 100:300]
+    W[0] = W[0][:, 0:35]
 
-    gW1, gb1, gW2, gb2 = ComputeGradients(X, Y, W1, b1, W2, b2, lamda)
-    gWnumSl1, gbnumSl1, gWnumSl2, gbnumSl2 = ComputeGradsNumSlow(X, Y, W1, b1, W2, b2, lamda, 1e-5)
+    gW1, gb1, gW2, gb2 = ComputeGradients(X, Y, W, b, lamda)
+    gWnumSl1, gbnumSl1, gWnumSl2, gbnumSl2 = ComputeGradsNum(X, Y, W, b, lamda, 1e-5)
     CompareGrads(gWnumSl1, gbnumSl1, gW1, gb1)
     CompareGrads(gWnumSl2, gbnumSl2, gW2, gb2)
 
@@ -362,29 +389,10 @@ def OpenAllData(num_of_labels):
 
     return X, Y, y
 
-def Main():
-    try:
-        #mode = "check" for gradient checking
-        #       "sanitycheck" to try overfitting 100 datapoints
-        #       "search" for searching the best hyperparameters
-        #       "default" for default training
-        mode = "default"#"sanitycheck"
-
-        #constants
-        # lamda = regularization parameter
-        lamda = 5e-4
-        # eta = learning rate
-        eta = 0.0159
-        n_batch = 100
-        epochs = 30
-        rho = 0.9
-        lr_decay = 0.95
-
-        # K =num of labels
-        K1 = 50
-        K2 = 10
-
-        X, Y, y = OpenAllData(K2)
+def OpenData(num_of_labels, mode):
+    if mode == "default":
+        #open all data batches
+        X, Y, y = OpenAllData(num_of_labels)
 
         Xtrain = X[:, 0:-1000]
         Ytrain = Y[:, 0:-1000]
@@ -394,39 +402,68 @@ def Main():
         Yval = Y[:, -1000:]
         yval = y[-1000:]
 
-        Xtest, Ytest, ytest = LoadBatch("test_batch", K2)
+        Xtest, Ytest, ytest = LoadBatch("test_batch", num_of_labels)
+
+    elif mode == "search" or mode == "check" or mode == "sanitycheck":
+        #open one batch
+        Xtrain, Ytrain, ytrain = LoadBatch("data_batch_1", num_of_labels)
+        Xval, Yval, yval = LoadBatch("data_batch_2", num_of_labels)
+        Xtest, Ytest, ytest = LoadBatch("test_batch", num_of_labels)
+
+        if mode == "sanitycheck":
+            Xtrain, Ytrain, ytrain = Xtrain[:, :100], Ytrain[:, :100], ytrain[:100]
+            Xval, Yval, yval = Xval[:, :100], Yval[:, :100], yval[:100]
+            Xtest, Ytest, ytest = Xtest[:, :100], Ytest[:, :100], ytest[:100]
+
+    return (Xtrain, Ytrain, ytrain, Xval, Yval, yval, Xtest, Ytest, ytest)
+
+
+def Main():
+    try:
+        #mode = "check" for gradient checking
+        #       "sanitycheck" to try overfitting 100 datapoints
+        #       "search" for searching the best hyperparameters
+        #       "default" for default training
+        mode = "check"#"default"#"sanitycheck"
+
+        #constants
+        # lamda = regularization parameter
+        lamda = 0 #noregularization
+        # eta = learning rate
+        eta = 0.0159
+        n_batch = 100
+        epochs = 30
+        rho = 0.9
+        lr_decay = 1 #nodecay
+
+        labels = 10
+
+        Xtrain, Ytrain, ytrain, Xval, Yval, yval, Xtest, Ytest, ytest = OpenData(labels, mode)
+        Xtrain, Xval, Xtest = ToZeroMean(Xtrain, Xval, Xtest)
 
         # d = dim of each image
         # N = num of images
         d, N = GetDimensions(Xtrain)
 
+        # nodes in layers
+        # nodes[0] -> nodes in input
+        # nodes[1] -> nodes in hidden layer
+        # nodes[2] -> nodes in next layer
+        nodes = [d, 50, 10]
+
         # W1 = weights K1 x d
         # b1 = bias K1 x 1
         # W2 = weights K2 x K1
         # b2 = bias K2 x 1
-        Xtrain, Xval, Xtest = ToZeroMean(Xtrain, Xval, Xtest)
+        W, b = InitParams(nodes)
 
 
         if mode == "check":
             # check
-            W1, W2, b1, b2 = InitParams(K1, K2, d)
-            CheckGrads(Xtrain, Ytrain, W1, b1, W2, b2, lamda, 4)
+            CheckGrads(Xtrain, Ytrain, W, b, lamda, 2)
         elif mode == "sanitycheck":
             #try to overfit 100 datapoints
-
-            Xtrain, Ytrain, ytrain = LoadBatch("data_batch_1", K2)
-            Xval, Yval, yval = LoadBatch("data_batch_2", K2)
-            Xtest, Ytest, ytest = LoadBatch("test_batch", K2)
-
-            Xtrain, Ytrain, ytrain = Xtrain[:, :100], Ytrain[:, :100], ytrain[:100]
-            Xval, Yval, yval = Xval[:, :100], Yval[:, :100], yval[:100]
-            Xtest, Ytest, ytest = Xtest[:, :100], Ytest[:, :100], ytest[:100]
-
-            d, N = GetDimensions(Xtrain)
-
             Xtrain, Xval, Xtest = ToZeroMean(Xtrain, Xval, Xtest)
-
-            W1, W2, b1, b2 = InitParams(K1, K2, d)
 
             W1star, b1star, W2star, b2star, allW1, allb1, allW2, allb2 = MiniBatchGD(Xtrain, Ytrain,
                                                                                      {"eta": 0.05, "n_batch": 10,
@@ -442,13 +479,6 @@ def Main():
 
         elif mode == "search":
             #search for best parameters
-
-            Xtrain, Ytrain, ytrain = LoadBatch("data_batch_1", K2)
-            Xval, Yval, yval = LoadBatch("data_batch_2", K2)
-            Xtest, Ytest, ytest = LoadBatch("test_batch", K2)
-
-            d, N = GetDimensions(Xtrain)
-
             Xtrain, Xval, Xtest = ToZeroMean(Xtrain, Xval, Xtest)
 
             #uniformly log-initialize etas in the range found with coarse search
