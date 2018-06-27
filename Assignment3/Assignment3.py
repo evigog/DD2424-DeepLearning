@@ -26,20 +26,20 @@ def ComputeGradsNum(X, Y, W, b, lamb, h):
         bnew = np.zeros(np.shape(b[i]))
         grad_b.append(bnew)
 
-    c = ComputeCost(X, Y, W[0], b[0], W[1], b[1], lamb)
+    c = ComputeCost(X, Y, W, b, lamb)
 
     for k in range(len(W)):
         for i in range(len(b[k])):
             b_try = deepcopy(b)
             b_try[k][i] += h
-            c2 = ComputeCost(X, Y, W[0], b_try[0], W[1], b_try[1], lamb)
+            c2 = ComputeCost(X, Y, W, b_try, lamb)
             grad_b[k][i] = (c2 - c) / h
 
         for i in range(W[k].shape[0]):
             for j in range(W[k].shape[1]):
                 W_try = deepcopy(W)
                 W_try[k][i, j] += h
-                c2 = ComputeCost(X, Y, W_try[0], b[0], W_try[1], b[1], lamb)
+                c2 = ComputeCost(X, Y, W_try, b, lamb)
                 grad_W[k][i, j] = (c2 - c) / h
 
     return grad_W, grad_b
@@ -113,13 +113,13 @@ def ReLU(s):
     s = np.maximum(s, 0)
     return s
 
-def EvaluateClassifier(X, W1, b1, W2, b2):
+def EvaluateClassifier(X, W, b):
     """
     apply forward pass and return
     the output probabilities of the classifier
     """
-    W = [W1, W2]
-    b = [b1, b2]
+    # W = [W1, W2]
+    # b = [b1, b2]
     h = [X]
     s = []
 
@@ -142,7 +142,7 @@ def EvaluateClassifier(X, W1, b1, W2, b2):
 
     return P, h, s
 
-def ComputeCost(X, Y, W1, b1, W2, b2, lamda):
+def ComputeCost(X, Y, W, b, lamda):
     """
     X: each column of it corresponds to an image and the whole matrix has size dx n
     Y: each column of Y (Kx n) is the one-hot ground truth label for the corresponding column of X
@@ -154,16 +154,20 @@ def ComputeCost(X, Y, W1, b1, W2, b2, lamda):
             the ground truth labels and the regularization term on W
     """
     d, N = GetDimensions(X)
-    regularization = lamda * (np.sum(np.power(W1, 2)) + np.sum(np.power(W2, 2)))
+    layers = len(W)
 
-    P, h, s1 = EvaluateClassifier(X, W1, b1, W2, b2)
+    regularization = 0
+    for l in range(layers):
+        regularization += lamda * np.sum(np.power(W[l], 2))
+
+    P, h, s1 = EvaluateClassifier(X, W, b)
     cross_entropy_loss = 0 - np.log(np.sum(np.prod((np.array(Y), P), axis=0), axis=0))
 
     J = (1/N) * np.sum(cross_entropy_loss) + regularization
     return J
 
 
-def ComputeAccuracy(X, y, W1, b1, W2, b2):
+def ComputeAccuracy(X, y, W, b):
     """
     X: each column of X corresponds to an image and X has size dn.
     y: Y is the vector of ground truth labels of length n.
@@ -171,10 +175,10 @@ def ComputeAccuracy(X, y, W1, b1, W2, b2):
     b:
     acc: acc is a scalar value containing the accuracy.
     """
-    P, h, s1 = EvaluateClassifier(X, W1, b1, W2, b2)
-    predicitons = np.argmax(P, axis=0)
-    correct = np.count_nonzero((y-predicitons) == 0)#because of the condition it actually counts the zeros
-    all = np.size(predicitons)
+    P, h, s1 = EvaluateClassifier(X, W, b)
+    predictions = np.argmax(P, axis=0)
+    correct = np.count_nonzero((y-predictions) == 0)#because of the condition it actually counts the zeros
+    all = np.size(predictions)
     if all == 0:
         raise(ZeroDivisionError("division by zero in ComputeAccuracy"))
     acc = correct/all
@@ -213,7 +217,7 @@ def ComputeGradients(X, Y, W, b, lamda):
     # P has size Kx n
     # h is the hidden layer output of the network during the forward pass
     # h has size K1 x N
-    P, h, s = EvaluateClassifier(X, W[0], b[0], W[1], b[1])
+    P, h, s = EvaluateClassifier(X, W, b)
 
     N = np.shape(X)[1]
     for i in range(N):
@@ -243,7 +247,7 @@ def ComputeGradients(X, Y, W, b, lamda):
             g = np.dot(np.diag(IndXPositive(si)), g)
 
             grad_b[l] = grad_b[l] + g
-            grad_W[l] = grad_W[l] + np.dot(g, np.transpose(hi))
+            grad_W[l] = grad_W[l] + np.dot(g, np.transpose(hi)) #???? h or s ???
 
     for l in range(layers):
         grad_b[l] = np.divide(grad_b[l], N)
@@ -256,21 +260,21 @@ def CompareGrads(WA, bA, WB, bB):
     for i in range(np.shape(WA)[0]):
         for j in range(np.shape(WA)[1]):
             diff = abs(WA[i, j] - WB[i, j]) / max(1e-6, (abs(WA[i, j])+ abs(WB[i, j])))
-            if (diff > 1e-5):
+            if (diff > 1e-4):
                 print(i, j, WA[i, j], WB[i, j], diff)
 
     print("********\nb\n********")
     for i in range(np.size(bA)):
         diff = abs(bA[i] - bB[i]) / max(1e-6, (abs(bA[i]) + abs(bB[i])))
-        if (diff > 1e-5):
+        if (diff > 1e-4):
             print(i, bA[i], bB[i], diff)
 
 def CheckGrads(X, Y, W, b, lamda, how_many):
-    randomdatapoints = [1,2]#random.sample(range(0, np.shape(X)[1]), how_many)
+    randomdatapoints = [11,12]#random.sample(range(0, np.shape(X)[1]), how_many)
 
-    X = X[0:35, randomdatapoints]
+    X = X[10:15, randomdatapoints]
     Y = Y[:, randomdatapoints]
-    W[0] = W[0][:, 0:35]
+    W[0] = W[0][:, 10:15]
 
     gW, gb = ComputeGradients(X, Y, W, b, lamda)
     gWnumSl, gbnumSl = ComputeGradsNum(X, Y, W, b, lamda, 1e-5)
@@ -294,10 +298,10 @@ def MiniBatchGD(X, Y, GDparams):
     rho = GDparams["rho"]
     lr_decay = GDparams["lr_decay"]
 
-    W1 = GDparams["W1"]
-    b1 = GDparams["b1"]
-    W2 = GDparams["W2"]
-    b2 = GDparams["b2"]
+    W = GDparams["W"]
+    b = GDparams["b"]
+
+    layers = len(W)
 
     #all datapoints
     N = np.shape(X)[1]
@@ -306,15 +310,23 @@ def MiniBatchGD(X, Y, GDparams):
         raise (NonInteger("non integer number of datapoints per step",1))
     steps_per_epoch = int(N / n_batch)
 
-    allW1 = [W1]
-    allb1 = [b1]
-    allW2 = [W2]
-    allb2 = [b2]
 
-    momW1 = np.zeros(np.shape(W1))
-    momW2 = np.zeros(np.shape(W2))
-    momb1 = np.zeros(np.shape(b1))
-    momb2 = np.zeros(np.shape(b2))
+    #initialize list of lists to keep track of all Ws and bs - in each step
+    #so allW[0][0] -> initial Ws for layer 0
+    #   allW[1][0] -> initial Ws for layer 1
+    allW = [[] for l in range(layers)]
+    allb = [[] for l in range(layers)]
+    for l in range(layers):
+        allW[l].append(W[l])
+        allb[l].append(b[l])
+
+
+    #keeping track of momentum
+    momW = []
+    momb = []
+    for l in range(layers):
+        momW.append(np.zeros(np.shape(W[l])))
+        momb.append(np.zeros(np.shape(b[l])))
 
     for ep in range(n_epochs):
         for st in range(steps_per_epoch):
@@ -322,46 +334,42 @@ def MiniBatchGD(X, Y, GDparams):
             batch_end = batch_start + n_batch
             Xbatch = X[:, batch_start:batch_end]
             Ybatch = Y[:, batch_start:batch_end]
-            grad_W1, grad_b1, grad_W2, grad_b2 = ComputeGradients(Xbatch, Ybatch, W1, b1, W2, b2, lamda)
+            grad_W, grad_b = ComputeGradients(Xbatch, Ybatch, W, b, lamda)
 
             #applying momentum to the update
-            momW1 = rho * momW1 + eta * grad_W1
-            W1 = W1 - momW1
+            for l in range(layers):
+                momW[l] = rho * momW[l] + eta * grad_W[l]
+                W[l] = W[l] - momW[l]
 
-            momb1 = rho * momb1 + eta * grad_b1
-            b1 = b1 - momb1
-
-            momW2 = rho * momW2 + eta * grad_W2
-            W2 = W2 - momW2
-
-            momb2 = rho * momb2 + eta * grad_b2
-            b2 = b2 - eta * grad_b2
+                momb[l] = rho * momb[l] + eta * grad_b[l]
+                b[l] = b[l] - momb[l]
 
         eta = lr_decay * eta
 
-        allW1.append(W1)
-        allb1.append(b1)
-        allW2.append(W2)
-        allb2.append(b2)
+        for l in range(layers):
+            allW[l].append(W[l])
+            allb[l].append(b[l])
 
         print("continuing...")
 
+    return (W, b, allW, allb)
 
-    return (W1, b1, W2, b2, allW1, allb1, allW2, allb2)
-
-def PlotLoss(Xtrain, Ytrain, Xval, Yval, allW1, allb1, allW2, allb2, lamda, eta):
+def PlotLoss(Xtrain, Ytrain, Xval, Yval, allW, allb, lamda, eta, mode):
     train_cost = []
     val_cost = []
 
-    #calculate costs
-    for i, W1 in enumerate(allW1):
-        b1 = allb1[i]
-        W2 = allW2[i]
-        b2 = allb2[i]
+    layers = len(allW)
 
-        cost = ComputeCost(Xtrain, Ytrain, W1, b1, W2, b2, lamda)
+    #calculate costs
+    for i in range(len(allW[0])):
+        W = [allW[l][i] for l in range(layers)]
+        b = [allb[l][i] for l in range(layers)]
+        # W = [allW[0][i], allW[1][i]]
+        # b = [allb[0][i], allb[1][i]]
+
+        cost = ComputeCost(Xtrain, Ytrain, W, b, lamda)
         train_cost.append(cost)
-        cost = ComputeCost(Xval, Yval, W1, b1, W2, b2, lamda)
+        cost = ComputeCost(Xval, Yval, W, b, lamda)
         val_cost.append(cost)
 
     #plot
@@ -373,7 +381,7 @@ def PlotLoss(Xtrain, Ytrain, Xval, Yval, allW1, allb1, allW2, allb2, lamda, eta)
     plt.legend()
     plt.title("Loss development over epochs, using eta " + str(eta) + " and lambda " + str(lamda))
     # plt.show()
-    filename = "eta" + str(eta) + "lamda" + str(lamda) + ".png"
+    filename = mode + "eta" + str(eta) + "lamda" + str(lamda) + ".png"
     plt.savefig(filename)
     print("saved file", filename)
     plt.clf()
@@ -394,8 +402,19 @@ def OpenAllData(num_of_labels):
     return X, Y, y
 
 def OpenData(num_of_labels, mode):
-    if mode == "default":
-        #open all data batches
+    if mode == "search" or mode == "check" or mode == "sanitycheck":
+        #open one batch
+        Xtrain, Ytrain, ytrain = LoadBatch("data_batch_1", num_of_labels)
+        Xval, Yval, yval = LoadBatch("data_batch_2", num_of_labels)
+        Xtest, Ytest, ytest = LoadBatch("test_batch", num_of_labels)
+
+        if mode == "sanitycheck":
+            Xtrain, Ytrain, ytrain = Xtrain[:, :100], Ytrain[:, :100], ytrain[:100]
+            Xval, Yval, yval = Xval[:, :100], Yval[:, :100], yval[:100]
+            Xtest, Ytest, ytest = Xtest[:, :100], Ytest[:, :100], ytest[:100]
+
+    else:
+        # open all data batches
         X, Y, y = OpenAllData(num_of_labels)
 
         Xtrain = X[:, 0:-1000]
@@ -408,17 +427,6 @@ def OpenData(num_of_labels, mode):
 
         Xtest, Ytest, ytest = LoadBatch("test_batch", num_of_labels)
 
-    elif mode == "search" or mode == "check" or mode == "sanitycheck":
-        #open one batch
-        Xtrain, Ytrain, ytrain = LoadBatch("data_batch_1", num_of_labels)
-        Xval, Yval, yval = LoadBatch("data_batch_2", num_of_labels)
-        Xtest, Ytest, ytest = LoadBatch("test_batch", num_of_labels)
-
-        if mode == "sanitycheck":
-            Xtrain, Ytrain, ytrain = Xtrain[:, :100], Ytrain[:, :100], ytrain[:100]
-            Xval, Yval, yval = Xval[:, :100], Yval[:, :100], yval[:100]
-            Xtest, Ytest, ytest = Xtest[:, :100], Ytest[:, :100], ytest[:100]
-
     return (Xtrain, Ytrain, ytrain, Xval, Yval, yval, Xtest, Ytest, ytest)
 
 
@@ -428,17 +436,17 @@ def Main():
         #       "sanitycheck" to try overfitting 100 datapoints
         #       "search" for searching the best hyperparameters
         #       "default" for default training
-        mode = "check"#"default"#"sanitycheck"
+        mode = "def"#"sanitycheck"#"default"#"sanitycheck"
 
         #constants
         # lamda = regularization parameter
-        lamda = 0 #noregularization
+        lamda = 5e-4 #0 = noregularization
         # eta = learning rate
         eta = 0.0159
         n_batch = 100
         epochs = 30
         rho = 0.9
-        lr_decay = 1 #nodecay
+        lr_decay = 0.95 #0 = nodecay
 
         labels = 10
 
@@ -453,6 +461,7 @@ def Main():
         # nodes[0] -> nodes in input
         # nodes[1] -> nodes in hidden layer
         # nodes[2] -> nodes in next layer
+        # nodes = [d, 50, 30, 10]
         nodes = [d, 50, 10]
 
         # W1 = weights K1 x d
@@ -469,16 +478,13 @@ def Main():
             #try to overfit 100 datapoints
             Xtrain, Xval, Xtest = ToZeroMean(Xtrain, Xval, Xtest)
 
-            W1star, b1star, W2star, b2star, allW1, allb1, allW2, allb2 = MiniBatchGD(Xtrain, Ytrain,
-                                                                                     {"eta": 0.05, "n_batch": 10,
-                                                                                      "epochs": 200, "lamda": 0,
-                                                                                      "rho": rho, "lr_decay": lr_decay,
-                                                                                      "W1": W1, "b1": b1, "W2": W2,
-                                                                                      "b2": b2})
+            Wstar, bstar, allW, allb = MiniBatchGD(Xtrain, Ytrain,
+                                                   {"eta": 0.05, "n_batch": 10, "epochs": 200, "lamda": 0,
+                                                    "rho": rho, "lr_decay": lr_decay, "W": W, "b": b})
             # plot loss on training and validation dataset
-            PlotLoss(Xtrain, Ytrain, Xval, Yval, allW1, allb1, allW2, allb2, lamda, eta)
+            PlotLoss(Xtrain, Ytrain, Xval, Yval, allW, allb, lamda, eta, mode)
             # calculate accuracy on training dataset
-            train_accuracy = ComputeAccuracy(Xtrain, ytrain, W1star, b1star, W2star, b2star)
+            train_accuracy = ComputeAccuracy(Xtrain, ytrain, Wstar, bstar)
             print("train accuracy:", train_accuracy)
 
         elif mode == "search":
@@ -515,16 +521,13 @@ def Main():
                     # lamda = 10 ** thel
                     lamda = thel
 
-                    W1, W2, b1, b2 = InitParams(K1, K2, d)
+                    W, b = InitParams(nodes)
 
-                    W1star, b1star, W2star, b2star, allW1, allb1, allW2, allb2 = MiniBatchGD(Xtrain, Ytrain,
-                                                                                             {"eta": eta, "n_batch":n_batch,
-                                                                                              "epochs": epochs, "lamda": lamda,
-                                                                                              "rho": rho, "lr_decay": lr_decay,
-                                                                                              "W1": W1, "b1": b1, "W2": W2,
-                                                                                              "b2": b2})
+                    Wstar, bstar, allW, allb = MiniBatchGD(Xtrain, Ytrain,
+                                                           {"eta": eta, "n_batch":n_batch, "epochs": epochs, "lamda": lamda,
+                                                            "rho": rho, "lr_decay": lr_decay, "W": W, "b": b})
                     #calculate accuracy on test dataset
-                    valid_accuracy = ComputeAccuracy(Xval, yval, W1star, b1star, W2star, b2star)
+                    valid_accuracy = ComputeAccuracy(Xval, yval, Wstar, bstar)
                     #save in file
                     file = open("thefineresttraincosts.txt", "a")
                     file.write("\n" + "eta: " + str(eta) + "    lamda: " + str(lamda) +
@@ -532,21 +535,14 @@ def Main():
                     file.close()
         else:
             #default training
-            W1, W2, b1, b2 = InitParams(K1, K2, d)
+            Wstar, bstar, allW, allb = MiniBatchGD(Xtrain, Ytrain,
+                                                   {"eta": eta, "n_batch": n_batch, "epochs": epochs, "lamda": lamda,
+                                                    "rho": rho, "lr_decay": lr_decay, "W": W, "b": b})
 
-            W1star, b1star, W2star, b2star, allW1, allb1, allW2, allb2 = MiniBatchGD(Xtrain, Ytrain,
-                                                                                     {"eta": eta,
-                                                                                      "n_batch": n_batch,
-                                                                                      "epochs": epochs,
-                                                                                      "lamda": lamda,
-                                                                                      "rho": rho,
-                                                                                      "lr_decay": lr_decay,
-                                                                                      "W1": W1, "b1": b1, "W2": W2,
-                                                                                      "b2": b2})
             # plot loss on training and validation dataset
-            PlotLoss(Xtrain, Ytrain, Xval, Yval, allW1, allb1, allW2, allb2, lamda, eta)
+            PlotLoss(Xtrain, Ytrain, Xval, Yval, allW, allb, lamda, eta, mode)
             # calculate accuracy on test dataset
-            testacc = ComputeAccuracy(Xtest, ytest, W1star, b1star, W2star, b2star)
+            testacc = ComputeAccuracy(Xtest, ytest, Wstar, bstar)
             print("TEST ACCURACY:", testacc)
 
         print("done")
