@@ -113,20 +113,83 @@ def ReLU(s):
     s = np.maximum(s, 0)
     return s
 
+def BatchNormBackPass(g, si, mu, sigma):
+    #for layer l
+    n = len(si)
+
+    djdmu = - np.sum(g) * np.power(sigma, (-1/2))
+
+    djdvar = -(1/2) * np.sum(g) * np.power(sigma, (-3/2))
+    djdvar = np.matmul(djdvar, np.diag(si-mu))
+
+    a = np.dot(g.flatten(), np.power(sigma, (-1/2)))
+    b = (2/n) * np.matmul(djdvar, np.diag(si-mu))
+    c = (1/n) * djdmu
+    g = a + b + c
+    g = g.reshape(-1,1)
+
+    return g
+
+def MuAndVarOfLayer(si):
+    # for layer l
+
+    # mu of each node of the layer for all datapoints in batch
+    # mu = np.sum(si, axis=1)/datapoint_num | primitive way
+    mu = np.mean(si, axis=1)
+
+    # variance of each node of the layer for all datapoints in batch
+    # datapoint_num = np.shape(si)[1]
+    # sigma2 = 0                         |
+    # for i in range(datapoint_num):     | simple way
+    #     sigma2 += (si[:, i] - mu) ** 2 |
+    # sigma2 /= datapoint_num            |
+    # sigma2 = ( np.sum(np.power((si - newmu), 2), axis=1) )/ datapoint_num | clever but primitive
+    sigma2 = np.var(si, axis=1)  # | as it should
+
+    return mu, sigma2
+
+def BatchNormalize(si, mu, sigma2):
+    #for layer l
+    datapoint_num = np.shape(si)[1]
+
+    newmu = mu.reshape(-1, 1)
+    newmu = np.repeat(newmu, datapoint_num, axis=1)
+
+    #now the normalization is done
+    # !!!!!!!! kati den paei kala edw !!!!!!!!!!!
+    # !!!!!!!! an ta kanw me bash thn askhsh tha pollaplasiasw me apeira !!!!!!!!!!!
+    # !!!!!!!! giati thelei na kanw antistrofh toy pinaka afou ton exw kanei diagwnio !!!!!!!!!!!
+    # !!!!!!!! egw to allaksa kai brhka prwta ton antistrofo !!!!!!!!!!!
+    # 1)na dw an sthn python einai ontws etis h praksh, mhpws einai kati allo gia pinakes
+    # 2)na tsekarw apo kapoion allon pws to ekane
+    a = (np.diag(np.power((sigma2+1e-16),(-1/2))))
+    b = si - newmu
+    normalized_si = np.matmul(a, b)
+
+    return normalized_si
+
+
 def EvaluateClassifier(X, W, b):
     """
     apply forward pass and return
     the output probabilities of the classifier
     """
-    # W = [W1, W2]
-    # b = [b1, b2]
     h = [X]
     s = []
+    snorm = []
+    mus = []
+    vars = []
 
+    #for each layer
     for i in range(len(W)):
         si = np.dot(W[i], h[-1]) + b[i]
         s.append(si)
-        hi = ReLU(si)
+        mu, var = MuAndVarOfLayer(si)
+        mus.append(mu)
+        vars.append(var)
+        sinorm = BatchNormalize(si, mu, var)
+        snorm.append(sinorm)
+        hi = ReLU(sinorm)
         h.append(hi)
 
     #in the last layer apply softmax
@@ -135,12 +198,7 @@ def EvaluateClassifier(X, W, b):
     #detach X from h list (was appended just to help generalisation)
     h.pop(0)
 
-    # s1 = np.dot(W1, X) + b1
-    # h = ReLU(s1)
-    # s2 = np.dot(W2, h) + b2
-    # P = SoftMax(s2)
-
-    return P, h, s
+    return P, h, s, snorm, mus, vars
 
 def ComputeCost(X, Y, W, b, lamda):
     """
@@ -160,7 +218,7 @@ def ComputeCost(X, Y, W, b, lamda):
     for l in range(layers):
         regularization += lamda * np.sum(np.power(W[l], 2))
 
-    P, h, s1 = EvaluateClassifier(X, W, b)
+    P, h, s1, s1_norm, mus, vars = EvaluateClassifier(X, W, b)
     cross_entropy_loss = 0 - np.log(np.sum(np.prod((np.array(Y), P), axis=0), axis=0))
 
     J = (1/N) * np.sum(cross_entropy_loss) + regularization
@@ -175,7 +233,7 @@ def ComputeAccuracy(X, y, W, b):
     b:
     acc: acc is a scalar value containing the accuracy.
     """
-    P, h, s1 = EvaluateClassifier(X, W, b)
+    P, h, s1, s1_norm, mus, vars = EvaluateClassifier(X, W, b)
     predictions = np.argmax(P, axis=0)
     correct = np.count_nonzero((y-predictions) == 0)#because of the condition it actually counts the zeros
     all = np.size(predictions)
@@ -217,7 +275,7 @@ def ComputeGradients(X, Y, W, b, lamda):
     # P has size Kx n
     # h is the hidden layer output of the network during the forward pass
     # h has size K1 x N
-    P, h, s = EvaluateClassifier(X, W, b)
+    P, h, s, s_norm, mus, vars = EvaluateClassifier(X, W, b)
 
     N = np.shape(X)[1]
     for i in range(N):
@@ -235,7 +293,10 @@ def ComputeGradients(X, Y, W, b, lamda):
         #progressing from second-to-last to first
         for l in range(layers-2, -1, -1):
 
-            si = s[l][:, i]
+            si_norm = s_norm[l][:, i]
+            mui = mus[l]
+            sigma2i = vars[l]
+
             if l == 0:
                 hi = X[:, i].reshape((-1, 1))
             else:
@@ -244,10 +305,12 @@ def ComputeGradients(X, Y, W, b, lamda):
 
             #propagate error backwards
             g = np.dot(np.transpose(W[l+1]), g)
-            g = np.dot(np.diag(IndXPositive(si)), g)
+            g = np.dot(np.diag(IndXPositive(si_norm)), g)
+
+            g = BatchNormBackPass(g, si_norm, mui, sigma2i)
 
             grad_b[l] = grad_b[l] + g
-            grad_W[l] = grad_W[l] + np.dot(g, np.transpose(hi)) #???? h or s ???
+            grad_W[l] = grad_W[l] + np.dot(g, np.transpose(hi))
 
     for l in range(layers):
         grad_b[l] = np.divide(grad_b[l], N)
@@ -277,9 +340,9 @@ def CheckGrads(X, Y, W, b, lamda, how_many):
     W[0] = W[0][:, 10:15]
 
     gW, gb = ComputeGradients(X, Y, W, b, lamda)
-    gWnumSl, gbnumSl = ComputeGradsNum(X, Y, W, b, lamda, 1e-5)
-    for l in range(len(gW)):
-        CompareGrads(gWnumSl[l], gbnumSl[l], gW[l], gb[l])
+    # gWnumSl, gbnumSl = ComputeGradsNum(X, Y, W, b, lamda, 1e-5)
+    # for l in range(len(gW)):
+    #     CompareGrads(gWnumSl[l], gbnumSl[l], gW[l], gb[l])
 
 
 def MiniBatchGD(X, Y, GDparams):
@@ -402,7 +465,7 @@ def OpenAllData(num_of_labels):
     return X, Y, y
 
 def OpenData(num_of_labels, mode):
-    if mode == "search" or mode == "check" or mode == "sanitycheck":
+    if mode == "search" or mode == "check" or mode == "sanitycheck" or mode == "default1":
         #open one batch
         Xtrain, Ytrain, ytrain = LoadBatch("data_batch_1", num_of_labels)
         Xval, Yval, yval = LoadBatch("data_batch_2", num_of_labels)
@@ -436,7 +499,8 @@ def Main():
         #       "sanitycheck" to try overfitting 100 datapoints
         #       "search" for searching the best hyperparameters
         #       "default" for default training
-        mode = "def"#"sanitycheck"#"default"#"sanitycheck"
+        #       "default1" for default training but using only one batch
+        mode = "check"#"sanitycheck"#"default"#"sanitycheck"
 
         #constants
         # lamda = regularization parameter
@@ -461,8 +525,8 @@ def Main():
         # nodes[0] -> nodes in input
         # nodes[1] -> nodes in hidden layer
         # nodes[2] -> nodes in next layer
-        # nodes = [d, 50, 30, 10]
-        nodes = [d, 50, 10]
+        nodes = [d, 50, 30, 10]
+        # nodes = [d, 50, 10]
 
         # W1 = weights K1 x d
         # b1 = bias K1 x 1
@@ -534,7 +598,7 @@ def Main():
                                "    validation accuracy: " + str(valid_accuracy))
                     file.close()
         else:
-            #default training
+            #default training - with one or all batches
             Wstar, bstar, allW, allb = MiniBatchGD(Xtrain, Ytrain,
                                                    {"eta": eta, "n_batch": n_batch, "epochs": epochs, "lamda": lamda,
                                                     "rho": rho, "lr_decay": lr_decay, "W": W, "b": b})
