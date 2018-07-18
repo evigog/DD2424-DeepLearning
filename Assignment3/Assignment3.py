@@ -113,23 +113,6 @@ def ReLU(s):
     s = np.maximum(s, 0)
     return s
 
-def BatchNormBackPass(g, si, mu, sigma):
-    #for layer l
-    n = len(si)
-
-    djdmu = - np.sum(g) * np.power(sigma, (-1/2))
-
-    djdvar = -(1/2) * np.sum(g) * np.power(sigma, (-3/2))
-    djdvar = np.matmul(djdvar, np.diag(si-mu))
-
-    a = np.dot(g.flatten(), np.power(sigma, (-1/2)))
-    b = (2/n) * np.matmul(djdvar, np.diag(si-mu))
-    c = (1/n) * djdmu
-    g = a + b + c
-    g = g.reshape(-1,1)
-
-    return g
-
 def MuAndVarOfLayer(si):
     # for layer l
 
@@ -148,71 +131,10 @@ def MuAndVarOfLayer(si):
 
     return mu, sigma2
 
-def BatchNormalize(si, mu, sigma2):
-    #for layer l
-    datapoint_num = np.shape(si)[1]
-
-    newmu = mu.reshape(-1, 1)
-    newmu = np.repeat(newmu, datapoint_num, axis=1)
-
-    #now the normalization is done
-    # !!!!!!!! kati den paei kala edw !!!!!!!!!!!
-    # !!!!!!!! an ta kanw me bash thn askhsh tha pollaplasiasw me apeira !!!!!!!!!!!
-    # !!!!!!!! giati thelei na kanw antistrofh toy pinaka afou ton exw kanei diagwnio !!!!!!!!!!!
-    # !!!!!!!! egw to allaksa kai brhka prwta ton antistrofo !!!!!!!!!!!
-    # 1)na dw an sthn python einai ontws etis h praksh, mhpws einai kati allo gia pinakes
-    # 2)na tsekarw apo kapoion allon pws to ekane
-    a = (np.diag(np.power((sigma2 + 1e-16), (-1/2))))
-    b = si - newmu
-    normalized_si = np.matmul(a, b)
-
-    return normalized_si
-
 def scores(X, W, b):
     return np.dot(W, X) + b
 
-def pantelos_evaluate_classifier(X, W, b):
-    h_ls, score_ls, mu_ls, var_ls, score_bn_ls = [], [], [], [], []
-    h_ls.append(X)
-    for i in range(len(W)):
-        if i == 0:
-            s = scores(X, W[i], b[i])
-            score_ls.append(s)
-
-            mu = s.mean(axis=1)
-            mu = np.expand_dims(mu, axis=1)
-            mu_ls.append(mu)
-            var = s.var(axis=1)
-            var = np.expand_dims(var, axis=1)
-            var_ls.append(var)
-
-            s_norm = (s - mu) / np.sqrt(var)
-            score_bn_ls.append(s_norm)
-
-            h = np.maximum(0, s_norm)
-            h_ls.append(h)
-        else:
-            s = scores(h_ls[-1], W[i], b[i])
-            score_ls.append(s)
-
-            mu = s.mean(axis=1)
-            mu = np.expand_dims(mu, axis=1)
-            mu_ls.append(mu)
-            var = s.var(axis=1)
-            var = np.expand_dims(var, axis=1)
-            var_ls.append(var)
-
-            s_norm = (s - mu) / np.sqrt(var)
-            score_bn_ls.append(s_norm)
-
-            h = np.maximum(0, s_norm)
-            h_ls.append(h)
-
-    softmax = np.exp(s) / np.sum(np.exp(s), axis=0, keepdims=True)
-
-    return softmax, h_ls, score_ls, score_bn_ls, mu_ls, var_ls
-
-def NewBatchNormalize(sl, mu, var, epsilon):
+def BatchNormalize(sl, mu, var, epsilon):
     slnorm = np.zeros(np.shape(sl))
 
     a = (var + epsilon)
@@ -242,7 +164,7 @@ def ForwardBatchNorm(X, W, b, epsilon):
         vars.append(var)
 
 
-        slnorm = NewBatchNormalize(sl, mu, var, epsilon)
+        slnorm = BatchNormalize(sl, mu, var, epsilon)
         bn_scores.append(slnorm)
         slrelunorm = ReLU(slnorm)
         bn_relu_scores.append(slrelunorm)
@@ -269,7 +191,7 @@ def PropagateBatchBackGrads(g, W, bn_scores, layer):
     #     g[:,i] = np.dot(g[:,i], np.diag(IndXPositive(bn_scores[-2][:,i])))
     return g
 
-def NewBatchNormBackPass(layer, g, scores, mus, vars, epsilon):
+def BatchNormBackPass(layer, g, scores, mus, vars, epsilon):
     n = np.shape(g)[1]
 
     vl = vars[layer]
@@ -322,7 +244,7 @@ def BackwardBatchNorm(X, Y, P, W, scores, bn_scores, bn_relu_scores, lamda, mus,
 
     #previous layers
     for layer in range(layers - 2, -1, -1):
-        g = NewBatchNormBackPass(layer, g, scores, mus, vars, epsilon)
+        g = BatchNormBackPass(layer, g, scores, mus, vars, epsilon)
         # compute grads
         if layer > 0:
             bn_relu_scores_prev_layer = bn_relu_scores[layer-1]
@@ -336,37 +258,6 @@ def BackwardBatchNorm(X, Y, P, W, scores, bn_scores, bn_relu_scores, lamda, mus,
             g = PropagateBatchBackGrads(g, W, bn_scores, layer)
 
     return (Wgrads, bgrads)
-
-def EvaluateClassifier(X, W, b):
-    """
-    apply forward pass and return
-    the output probabilities of the classifier
-    """
-    h = [X]
-    s = []
-    snorm = []
-    mus = []
-    vars = []
-
-    #for each layer
-    for i in range(len(W)):
-        si = np.dot(W[i], h[-1]) + b[i]
-        s.append(si)
-        mu, var = MuAndVarOfLayer(si)
-        mus.append(mu)
-        vars.append(var)
-        sinorm = BatchNormalize(si, mu, var)
-        snorm.append(sinorm)
-        hi = ReLU(sinorm)
-        h.append(hi)
-
-    #in the last layer apply softmax
-    P = SoftMax(s[-1])
-
-    #detach X from h list (was appended just to help generalisation)
-    h.pop(0)
-
-    return P, h, s, snorm, mus, vars
 
 def ComputeCost(X, Y, W, b, lamda):
     """
@@ -386,7 +277,6 @@ def ComputeCost(X, Y, W, b, lamda):
     for l in range(layers):
         regularization += lamda * np.sum(np.power(W[l], 2))
 
-    # P, h, s1, s1_norm, mus, vars = bn_evaluate_classifier(X,W,b)#EvaluateClassifier(X, W, b)
     P, scores, bn_scores, bn_relu_scores, mus, vars = ForwardBatchNorm(X, W, b, 1e-16)
     cross_entropy_loss = 0 - np.log(np.sum(np.prod((np.array(Y), P), axis=0), axis=0))
 
@@ -402,7 +292,7 @@ def ComputeAccuracy(X, y, W, b):
     b:
     acc: acc is a scalar value containing the accuracy.
     """
-    P, h, s1, s1_norm, mus, vars = EvaluateClassifier(X, W, b)
+    P, s1, s1_norm, h, mus, vars = ForwardBatchNorm(X, W, b)
     predictions = np.argmax(P, axis=0)
     correct = np.count_nonzero((y-predictions) == 0)#because of the condition it actually counts the zeros
     all = np.size(predictions)
@@ -419,68 +309,6 @@ def IndXPositive(x):
     x[below_zero_indices] = 0
 
     return x
-
-def batch_norm_back_pass_pant(g, s, mu, var):
-    s_mu = s - mu
-
-    grad_var = - 1 / 2 * (g * (var ** (-3 / 2)) * s_mu).sum(axis=1)
-    grad_mu = - (g * (var ** (-1 / 2))).sum(axis=1)
-
-    grad_var = np.expand_dims(grad_var, 1)
-    grad_mu = np.expand_dims(grad_mu, 1)
-    grad_s = g * (var ** (-1 / 2)) + (2 / s.shape[1]) * grad_var * s_mu + grad_mu / s.shape[1]
-    return grad_s
-
-
-def compute_gradients_pant(x, y, p, h, scores, mu, var, W, b, num_layers, lamda):
-    '''
-    compute gradients analytically
-    '''
-    J_grad_W = []
-    J_grad_b = []
-    grad_W = {}
-    grad_b = {}
-    grad_W[0] = np.zeros((W[0].shape[0], W[0].shape[1]))
-    grad_b[0] = np.zeros((b[0].shape[0], 1))
-
-    g = p - y
-
-    for i in reversed(range(num_layers)):
-        if i == num_layers - 1:
-            grad_W[i] = np.dot(g, h[i].T) / x.shape[1]
-            grad_b[i] = g.sum() / x.shape[1]
-
-            J_grad_W.append(grad_W[i] + 2 * lamda * W[i])
-            J_grad_b.append(grad_b[i])
-
-            # Propagate the gradients
-            g = np.dot(g.T, W[i])
-            s_1 = np.copy(h[i])
-            # if mode == 'ReLU':
-            ind = 1 * (s_1 > 0)
-            # elif mode == 'LeakyReLU':
-            #     ind = (1 * (s_1 > 0) + 0.01 * (s_1 < 0))
-
-            g = np.multiply(g.T, ind)
-        else:
-            g = batch_norm_back_pass_pant(g, scores[i], mu[i], var[i])
-            grad_W[i] = np.dot(g, h[i].T) / x.shape[1]
-            grad_b[i] = g.sum() / x.shape[1]
-
-            J_grad_W.append(grad_W[i] + 2 * lamda * W[i])
-            J_grad_b.append(grad_b[i])
-
-            # Propagate the gradients
-            g = np.dot(g.T, W[i])
-            s_1 = np.copy(h[i])
-            # if mode == 'ReLU':
-            ind = 1 * (s_1 > 0)
-            # elif mode == 'LeakyReLU':
-            #     ind = (1 * (s_1 > 0) + 0.01 * (s_1 < 0))
-
-            g = np.multiply(g.T, ind)
-
-    return J_grad_W, J_grad_b
 
 
 def ComputeGradients(X, Y, W, b, lamda):
@@ -500,65 +328,9 @@ def ComputeGradients(X, Y, W, b, lamda):
     # h has size K1 x N
 
     epsilon = 1e-16 #small constant to prevent divisions by zerp
-    Ppant, hpant, spant, s_normpant, muspant, varspant = pantelos_evaluate_classifier(X, W, b)
     P, scores, bn_scores, bn_relu_scores, mus, vars = ForwardBatchNorm(X, W, b, epsilon)
-    # softmax, h_ls, score_ls, score_bn_ls = bn_evaluate_classifier(X, W, b)
-
     Wgrads, bgrads = BackwardBatchNorm(X, Y, P, W, scores, bn_scores, bn_relu_scores, lamda, mus, vars, epsilon)
-    # compute_gradients_pant(X, Y, P, bn_relu_scores, scores, mus, vars, W, b, num_layers = len(W), lamda = lamda)
 
-    #########################################
-    #
-    # # initialize gradients
-    # layers = len(W)
-    #
-    # grad_W = []
-    # grad_b = []
-    # for i in range(layers):
-    #     grad_W.append(np.zeros(np.shape(W[i])))
-    #     grad_b.append(np.zeros(np.shape(b[i])))
-    #
-    # N = np.shape(X)[1]
-    # for i in range(N):
-    #     #last layer
-    #     Yi = Y[:, i].reshape((-1, 1))
-    #     Pi = P[:, i].reshape((-1, 1))
-    #     hi = h[-2][:, i].reshape((-1, 1))
-    #
-    #     g = Pi - Yi
-    #
-    #     grad_b[-1] = grad_b[-1] + g
-    #     grad_W[-1] = grad_W[-1] + np.dot(g, np.transpose(hi))
-    #
-    #     #for the next layers
-    #     #progressing from second-to-last to first
-    #     for l in range(layers-2, -1, -1):
-    #
-    #         si_norm = s_norm[l][:, i]
-    #         mui = mus[l]
-    #         sigma2i = vars[l]
-    #
-    #         if l == 0:
-    #             hi = X[:, i].reshape((-1, 1))
-    #         else:
-    #             hi = h[l-1][:, i].reshape((-1, 1))
-    #
-    #
-    #         #propagate error backwards
-    #         g = np.dot(np.transpose(W[l+1]), g)
-    #         g = np.dot(np.diag(IndXPositive(si_norm)), g)
-    #
-    #         g = BatchNormBackPass(g, si_norm, mui, sigma2i)
-    #
-    #         grad_b[l] = grad_b[l] + g
-    #         grad_W[l] = grad_W[l] + np.dot(g, np.transpose(hi))
-    #
-    # for l in range(layers):
-    #     grad_b[l] = np.divide(grad_b[l], N)
-    #     grad_W[l] = np.divide(grad_W[l], N) + 2 * lamda * W[l]
-    #
-    # return (grad_W, grad_b)
-    #########################################
 
     return Wgrads, bgrads
 
@@ -769,8 +541,8 @@ def Main():
         # nodes[0] -> nodes in input
         # nodes[1] -> nodes in hidden layer
         # nodes[2] -> nodes in next layer
-        nodes = [d, 50, 30, 10]
-        # nodes = [d, 50, 10]
+        # nodes = [d, 50, 30, 10]
+        nodes = [d, 50, 10]
 
         # W1 = weights K1 x d
         # b1 = bias K1 x 1
