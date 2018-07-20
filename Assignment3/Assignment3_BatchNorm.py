@@ -361,10 +361,10 @@ def ComputeGradientsBatchNorm(X, Y, W, b, lamda, epsilon):
     # h has size K1 x N
 
     P, scores, bn_scores, bn_relu_scores, mus, vars = ForwardBatchNorm(X, W, b, epsilon)
-    Wgrads, bgrads = BackwardBatchNorm(X, Y, P, W, scores, bn_scores, bn_relu_scores, lamda, mus, vars, epsilon)
+    Wgrads, bgrads = BackwardBatchNorm(X, Y, P, W, scores, bn_scores, bn_relu_scores, lamda, np.copy(mus), np.copy(vars), epsilon)
 
 
-    return Wgrads, bgrads
+    return Wgrads, bgrads, mus, vars
 
 def ComputeGradients(X, Y, W, b, lamda):
     """
@@ -457,6 +457,12 @@ def CheckGrads(X, Y, W, b, lamda, epsilon, how_many, batch_norm_mode):
         CompareGrads(gWnumSl[l], gbnumSl[l], gW[l], gb[l])
 
 
+def UpdateMovAv(movav_mean, movav_var, mus, vars, alpha, layers):
+    for l in range(layers):
+        movav_mean[l] = alpha * movav_mean[l] + (1 - alpha) * mus[l]
+        movav_var[l] = alpha * movav_var[l] + (1 - alpha) * vars[l]
+    return movav_mean, movav_var
+
 def MiniBatchGD(X, Y, GDparams):
     """
     :param X: all the training images
@@ -479,7 +485,9 @@ def MiniBatchGD(X, Y, GDparams):
 
     batch_norm_mode = GDparams["batch_norm_mode"]
 
+    nodes = GDparams["nodes"]
     layers = len(W)
+
 
     #all datapoints
     N = np.shape(X)[1]
@@ -506,6 +514,14 @@ def MiniBatchGD(X, Y, GDparams):
         momW.append(np.zeros(np.shape(W[l])))
         momb.append(np.zeros(np.shape(b[l])))
 
+    #initializing moving averages (used in batch normalization)
+    movav_mean = []
+    movav_var = []
+    alpha = 0 # only for the first loop. then I change it to 0.99
+    for n in range(1, len(nodes)):
+        movav_mean.append(np.zeros(nodes[n]))
+        movav_var.append(np.zeros(nodes[n]))
+
     for ep in range(n_epochs):
         for st in range(steps_per_epoch):
             batch_start = st * n_batch
@@ -516,7 +532,9 @@ def MiniBatchGD(X, Y, GDparams):
             if batch_norm_mode == "no":
                 grad_W, grad_b = ComputeGradients(Xbatch, Ybatch, W, b, lamda)
             else:
-                grad_W, grad_b = ComputeGradientsBatchNorm(Xbatch, Ybatch, W, b, lamda, epsilon)
+                grad_W, grad_b, mus, vars = ComputeGradientsBatchNorm(Xbatch, Ybatch, W, b, lamda, epsilon)
+                movav_mean, movav_var = UpdateMovAv(movav_mean, movav_var, mus, vars, alpha, layers)
+                alpha = 0.99 #in order for the moving average to be updated correctly after the first loop when it is initialized with a = 0
 
             #applying momentum to the update
             for l in range(layers):
@@ -534,7 +552,7 @@ def MiniBatchGD(X, Y, GDparams):
 
         print("continuing...")
 
-    return (W, b, allW, allb)
+    return (W, b, allW, allb, movav_mean, movav_var)
 
 def PlotLoss(Xtrain, Ytrain, Xval, Yval, allW, allb, lamda, eta, epsilon, mode, batch_norm_mode):
     train_cost = []
@@ -665,10 +683,11 @@ def Main():
             #try to overfit 100 datapoints
             Xtrain, Xval, Xtest = ToZeroMean(Xtrain, Xval, Xtest)
 
-            Wstar, bstar, allW, allb = MiniBatchGD(Xtrain, Ytrain,
-                                                   {"eta": eta, "n_batch": 10, "epochs": 200, "lamda": lamda,
-                                                    "rho": rho, "lr_decay": lr_decay, "W": W, "b": b,
-                                                    "epsilon": epsilon, "batch_norm_mode": batch_norm_mode})
+            Wstar, bstar, allW, allb, movav_mean, movav_var = MiniBatchGD(Xtrain, Ytrain,
+                                                            {"eta": eta, "n_batch": 10, "epochs": 200, "lamda": lamda,
+                                                            "rho": rho, "lr_decay": lr_decay, "W": W, "b": b,
+                                                            "epsilon": epsilon, "nodes": nodes,
+                                                            "batch_norm_mode": batch_norm_mode})
             # plot loss on training and validation dataset
             PlotLoss(Xtrain, Ytrain, Xval, Yval, allW, allb, lamda, eta, epsilon, mode, batch_norm_mode)
             # calculate accuracy on training dataset
@@ -711,9 +730,11 @@ def Main():
 
                     W, b = InitParams(nodes)
 
-                    Wstar, bstar, allW, allb = MiniBatchGD(Xtrain, Ytrain,
-                                                           {"eta": eta, "n_batch":n_batch, "epochs": epochs, "lamda": lamda,
-                                                            "rho": rho, "lr_decay": lr_decay, "W": W, "b": b})
+                    Wstar, bstar, allW, allb, movav_mean, movav_var = MiniBatchGD(Xtrain, Ytrain,
+                                                                    {"eta": eta, "n_batch":n_batch, "epochs": epochs,
+                                                                     "lamda": lamda, "rho": rho, "lr_decay": lr_decay,
+                                                                     "W": W, "b": b, "nodes": nodes,
+                                                                     "batch_norm_mode": batch_norm_mode})
                     #calculate accuracy on test dataset
                     valid_accuracy = ComputeAccuracy(Xval, yval, Wstar, bstar)
                     #save in file
@@ -723,9 +744,11 @@ def Main():
                     file.close()
         else:
             #default training
-            Wstar, bstar, allW, allb = MiniBatchGD(Xtrain, Ytrain,
-                                                   {"eta": eta, "n_batch": n_batch, "epochs": epochs, "lamda": lamda,
-                                                    "rho": rho, "lr_decay": lr_decay, "W": W, "b": b})
+            Wstar, bstar, allW, allb, movav_mean, movav_var = MiniBatchGD(Xtrain, Ytrain,
+                                                            {"eta": eta, "n_batch": n_batch, "epochs": epochs,
+                                                             "lamda": lamda, "rho": rho, "lr_decay": lr_decay,
+                                                             "W": W, "b": b, "nodes": nodes,
+                                                             "batch_norm_mode": batch_norm_mode})
 
             # plot loss on training and validation dataset
             PlotLoss(Xtrain, Ytrain, Xval, Yval, allW, allb, lamda, eta, mode)
