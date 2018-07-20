@@ -15,7 +15,7 @@ class NonInteger(Exception):
         # Now for your custom code...
         self.errors = errors
 
-def ComputeGradsNum(X, Y, W, b, lamb, h):
+def ComputeGradsNum(X, Y, W, b, lamb, epsilon, h, batch_norm_mode):
     #initialize grads
     grad_W = []
     grad_b = []
@@ -26,20 +26,20 @@ def ComputeGradsNum(X, Y, W, b, lamb, h):
         bnew = np.zeros(np.shape(b[i]))
         grad_b.append(bnew)
 
-    c = ComputeCost(X, Y, W, b, lamb)
+    c = ComputeCost(X, Y, W, b, lamb, epsilon, batch_norm_mode)
 
     for k in range(len(W)):
         for i in range(len(b[k])):
             b_try = deepcopy(b)
             b_try[k][i] += h
-            c2 = ComputeCost(X, Y, W, b_try, lamb)
+            c2 = ComputeCost(X, Y, W, b_try, lamb, epsilon, batch_norm_mode)
             grad_b[k][i] = (c2 - c) / h
 
         for i in range(W[k].shape[0]):
             for j in range(W[k].shape[1]):
                 W_try = deepcopy(W)
                 W_try[k][i, j] += h
-                c2 = ComputeCost(X, Y, W_try, b, lamb)
+                c2 = ComputeCost(X, Y, W_try, b, lamb, epsilon, batch_norm_mode)
                 grad_W[k][i, j] = (c2 - c) / h
 
     return grad_W, grad_b
@@ -441,15 +441,18 @@ def CompareGrads(WA, bA, WB, bB):
         if (diff > 1e-4):
             print(i, bA[i], bB[i], diff)
 
-def CheckGrads(X, Y, W, b, lamda, how_many):
+def CheckGrads(X, Y, W, b, lamda, epsilon, how_many, batch_norm_mode):
     randomdatapoints = [11,12]#random.sample(range(0, np.shape(X)[1]), how_many)
 
     X = X[10:15, randomdatapoints]
     Y = Y[:, randomdatapoints]
     W[0] = W[0][:, 10:15]
 
-    gW, gb = ComputeGradients(X, Y, W, b, lamda)
-    gWnumSl, gbnumSl = ComputeGradsNum(X, Y, W, b, lamda, 1e-5)
+    if batch_norm_mode == "no":
+        gW, gb = ComputeGradients(X, Y, W, b, lamda)
+    else:
+        gW, gb = ComputeGradientsBatchNorm(X, Y, W, b, lamda, epsilon)
+    gWnumSl, gbnumSl = ComputeGradsNum(X, Y, W, b, lamda, epsilon, 1e-5, batch_norm_mode)
     for l in range(len(gW)):
         CompareGrads(gWnumSl[l], gbnumSl[l], gW[l], gb[l])
 
@@ -657,7 +660,7 @@ def Main():
 
         if mode == "check":
             # check
-            CheckGrads(Xtrain, Ytrain, W, b, lamda, 2)
+            CheckGrads(Xtrain, Ytrain, W, b, lamda, epsilon, 2, batch_norm_mode)
         elif mode == "sanitycheck":
             #try to overfit 100 datapoints
             Xtrain, Xval, Xtest = ToZeroMean(Xtrain, Xval, Xtest)
