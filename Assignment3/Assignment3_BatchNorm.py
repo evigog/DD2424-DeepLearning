@@ -142,7 +142,7 @@ def EvaluateClassifier(X, W, b):
 
     return P, h, s
 
-def ComputeCost(X, Y, W, b, lamda, epsilon, batch_norm_mode):
+def ComputeCost(X, Y, W, b, lamda, epsilon, batch_norm_mode, **kwargs):
     """
     X: each column of it corresponds to an image and the whole matrix has size dx n
     Y: each column of Y (Kx n) is the one-hot ground truth label for the corresponding column of X
@@ -163,14 +163,14 @@ def ComputeCost(X, Y, W, b, lamda, epsilon, batch_norm_mode):
     if batch_norm_mode == "no":
         P, h, s1 = EvaluateClassifier(X, W, b)
     else:
-        P, scores, bn_scores, bn_relu_scores, mus, vars = ForwardBatchNorm(X, W, b, epsilon)
+        P, scores, bn_scores, bn_relu_scores, mus, vars = ForwardBatchNorm(X, W, b, epsilon, **kwargs)
     cross_entropy_loss = 0 - np.log(np.sum(np.prod((np.array(Y), P), axis=0), axis=0))
 
     J = (1/N) * np.sum(cross_entropy_loss) + regularization
     return J
 
 
-def ComputeAccuracy(X, y, W, b, epsilon, batch_norm_mode):
+def ComputeAccuracy(X, y, W, b, epsilon, batch_norm_mode, **kwargs):
     """
     X: each column of X corresponds to an image and X has size dn.
     y: Y is the vector of ground truth labels of length n.
@@ -181,7 +181,7 @@ def ComputeAccuracy(X, y, W, b, epsilon, batch_norm_mode):
     if batch_norm_mode == "no":
         P, h, s1 = EvaluateClassifier(X, W, b)
     else:
-        P, scores, bn_scores, bn_relu_scores, mus, vars = ForwardBatchNorm(X, W, b, epsilon)
+        P, scores, bn_scores, bn_relu_scores, mus, vars = ForwardBatchNorm(X, W, b, epsilon, **kwargs)
     predictions = np.argmax(P, axis=0)
     correct = np.count_nonzero((y-predictions) == 0)#because of the condition it actually counts the zeros
     all = np.size(predictions)
@@ -314,22 +314,29 @@ def BatchNormalize(sl, mu, var, epsilon):
 
     return slnorm
 
-def ForwardBatchNorm(X, W, b, epsilon):
+def ForwardBatchNorm(X, W, b, epsilon, **kwargs):
     scores = [] #unnormalized scores
     bn_scores = [] #normalized scores
     bn_relu_scores = [X] #normalized scores after ReLU
     mus = [] #means of layers
     vars = [] #vars of layers
 
+    if kwargs != {}:
+        mus = kwargs["movav_mean"]
+        vars = kwargs["movav_var"]
+
     #for each layer except last:
     for l in range(len(W)):
         sl = np.dot(W[l], bn_relu_scores[-1]) + b[l]
         scores.append(sl)
 
-        mu, var = MuAndVarOfLayer(sl)
-        mus.append(mu)
-        vars.append(var)
-
+        if kwargs != {}:
+            mu = mus[l]
+            var = vars[l]
+        else:
+            mu, var = MuAndVarOfLayer(sl)
+            mus.append(mu)
+            vars.append(var)
 
         slnorm = BatchNormalize(sl, mu, var, epsilon)
         bn_scores.append(slnorm)
@@ -451,7 +458,7 @@ def CheckGrads(X, Y, W, b, lamda, epsilon, how_many, batch_norm_mode):
     if batch_norm_mode == "no":
         gW, gb = ComputeGradients(X, Y, W, b, lamda)
     else:
-        gW, gb = ComputeGradientsBatchNorm(X, Y, W, b, lamda, epsilon)
+        gW, gb, mus, vars = ComputeGradientsBatchNorm(X, Y, W, b, lamda, epsilon)
     gWnumSl, gbnumSl = ComputeGradsNum(X, Y, W, b, lamda, epsilon, 1e-5, batch_norm_mode)
     for l in range(len(gW)):
         CompareGrads(gWnumSl[l], gbnumSl[l], gW[l], gb[l])
@@ -554,7 +561,7 @@ def MiniBatchGD(X, Y, GDparams):
 
     return (W, b, allW, allb, movav_mean, movav_var)
 
-def PlotLoss(Xtrain, Ytrain, Xval, Yval, allW, allb, lamda, eta, epsilon, mode, batch_norm_mode):
+def PlotLoss(Xtrain, Ytrain, Xval, Yval, allW, allb, lamda, eta, epsilon, mode, batch_norm_mode, **kwargs):
     train_cost = []
     val_cost = []
 
@@ -567,9 +574,9 @@ def PlotLoss(Xtrain, Ytrain, Xval, Yval, allW, allb, lamda, eta, epsilon, mode, 
         # W = [allW[0][i], allW[1][i]]
         # b = [allb[0][i], allb[1][i]]
 
-        cost = ComputeCost(Xtrain, Ytrain, W, b, lamda, epsilon, batch_norm_mode)
+        cost = ComputeCost(Xtrain, Ytrain, W, b, lamda, epsilon, batch_norm_mode, **kwargs)
         train_cost.append(cost)
-        cost = ComputeCost(Xval, Yval, W, b, lamda, epsilon, batch_norm_mode)
+        cost = ComputeCost(Xval, Yval, W, b, lamda, epsilon, batch_norm_mode, **kwargs)
         val_cost.append(cost)
 
     #plot
@@ -602,7 +609,7 @@ def OpenAllData(num_of_labels):
     return X, Y, y
 
 def OpenData(num_of_labels, mode):
-    if mode == "search" or mode == "check" or mode == "sanitycheck":
+    if mode == "search" or mode == "check" or mode == "sanitycheck" or mode == "default1":
         #open one batch
         Xtrain, Ytrain, ytrain = LoadBatch("data_batch_1", num_of_labels)
         Xval, Yval, yval = LoadBatch("data_batch_2", num_of_labels)
@@ -636,7 +643,8 @@ def Main():
         #       "sanitycheck" to try overfitting 100 datapoints
         #       "search" for searching the best hyperparameters
         #       "default" for default training
-        mode = "sanitycheck"#"sanitycheck"#"default"#"sanitycheck"
+        #       "default1" for default training but using only one batch
+        mode = "default1"#"sanitycheck"#"default"#"sanitycheck"
 
         # "yes" - > implement batch normalization
         # "no"  - > do not implement
@@ -644,11 +652,11 @@ def Main():
 
         #constants
         # lamda = regularization parameter
-        lamda = 5e-4 #0 = noregularization
+        lamda = 5e-4#1e-6 #0 = noregularization
         # eta = learning rate
-        eta = 0.1
+        eta = 0.05
         n_batch = 100
-        epochs = 30
+        epochs = 100
         rho = 0.9
         lr_decay = 0.95 #0 = nodecay
         epsilon = 1e-16 #small constant to prevent divisions by zerp
@@ -689,9 +697,11 @@ def Main():
                                                             "epsilon": epsilon, "nodes": nodes,
                                                             "batch_norm_mode": batch_norm_mode})
             # plot loss on training and validation dataset
-            PlotLoss(Xtrain, Ytrain, Xval, Yval, allW, allb, lamda, eta, epsilon, mode, batch_norm_mode)
+            PlotLoss(Xtrain, Ytrain, Xval, Yval, allW, allb, lamda, eta, epsilon, mode, batch_norm_mode,
+                     **{"movav_mean": movav_mean, "movav_var": movav_var})
             # calculate accuracy on training dataset
-            train_accuracy = ComputeAccuracy(Xtrain, ytrain, Wstar, bstar, epsilon, batch_norm_mode)
+            train_accuracy = ComputeAccuracy(Xtrain, ytrain, Wstar, bstar, epsilon, batch_norm_mode,
+                                            **{"movav_mean":movav_mean, "movav_var": movav_var})
             print("train accuracy:", train_accuracy)
 
         elif mode == "search":
@@ -733,12 +743,13 @@ def Main():
                     Wstar, bstar, allW, allb, movav_mean, movav_var = MiniBatchGD(Xtrain, Ytrain,
                                                                     {"eta": eta, "n_batch":n_batch, "epochs": epochs,
                                                                      "lamda": lamda, "rho": rho, "lr_decay": lr_decay,
-                                                                     "W": W, "b": b, "nodes": nodes,
+                                                                     "W": W, "b": b, "epsilon": epsilon, "nodes": nodes,
                                                                      "batch_norm_mode": batch_norm_mode})
                     #calculate accuracy on test dataset
-                    valid_accuracy = ComputeAccuracy(Xval, yval, Wstar, bstar)
+                    valid_accuracy = ComputeAccuracy(Xval, yval, Wstar, bstar, epsilon, batch_norm_mode,
+                                                     **{"movav_mean":movav_mean, "movav_var": movav_var})
                     #save in file
-                    file = open("thefineresttraincosts.txt", "a")
+                    file = open("coarsecosts.txt", "a")
                     file.write("\n" + "eta: " + str(eta) + "    lamda: " + str(lamda) +
                                "    validation accuracy: " + str(valid_accuracy))
                     file.close()
@@ -747,13 +758,15 @@ def Main():
             Wstar, bstar, allW, allb, movav_mean, movav_var = MiniBatchGD(Xtrain, Ytrain,
                                                             {"eta": eta, "n_batch": n_batch, "epochs": epochs,
                                                              "lamda": lamda, "rho": rho, "lr_decay": lr_decay,
-                                                             "W": W, "b": b, "nodes": nodes,
+                                                             "W": W, "b": b, "epsilon": epsilon, "nodes": nodes,
                                                              "batch_norm_mode": batch_norm_mode})
 
             # plot loss on training and validation dataset
-            PlotLoss(Xtrain, Ytrain, Xval, Yval, allW, allb, lamda, eta, mode)
+            PlotLoss(Xtrain, Ytrain, Xval, Yval, allW, allb, lamda, eta, epsilon, mode, batch_norm_mode,
+                     **{"movav_mean":movav_mean, "movav_var": movav_var})
             # calculate accuracy on test dataset
-            testacc = ComputeAccuracy(Xtest, ytest, Wstar, bstar)
+            testacc = ComputeAccuracy(Xtest, ytest, Wstar, bstar, epsilon, batch_norm_mode,
+                                      **{"movav_mean":movav_mean, "movav_var": movav_var})
             print("TEST ACCURACY:", testacc)
 
         print("done")
