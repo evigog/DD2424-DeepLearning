@@ -88,7 +88,7 @@ def GetDimensions(X):
     return (d, N)
 
 
-def InitParams(nodes):
+def InitParams(nodes, init_mode):
     #same seed every time for testing purposes
     np.random.seed(123)
     W = []
@@ -96,7 +96,10 @@ def InitParams(nodes):
     for i, nodesnum in enumerate(nodes):
         if i == 0:
             continue
-        Wi = np.random.normal(0, 0.001, (nodes[i], nodes[i-1]))
+        if init_mode == "he":
+            Wi = np.random.normal(0, (2/nodes[i - 1]), (nodes[i], nodes[i - 1]))
+        else:
+            Wi = np.random.normal(0, 0.001, (nodes[i], nodes[i-1]))
         W.append(Wi)
         bi = np.zeros((nodes[i], 1))
         b.append(bi)
@@ -557,7 +560,7 @@ def MiniBatchGD(X, Y, GDparams):
             allW[l].append(W[l])
             allb[l].append(b[l])
 
-        print("continuing...")
+        print("epoch "+str(ep)+" continuing...")
 
     return (W, b, allW, allb, movav_mean, movav_var)
 
@@ -586,7 +589,7 @@ def PlotLoss(Xtrain, Ytrain, Xval, Yval, allW, allb, lamda, eta, epsilon, mode, 
     plt.xlabel("Epochs")
     plt.ylabel("Loss")
     plt.legend()
-    plt.title("Loss development over epochs, using eta " + str(eta) + " and lambda " + str(lamda))
+    plt.title("Loss development over epochs, using eta " + str(eta) + " and lambda " + str(lamda), y=1.03)
     # plt.show()
     filename = mode + "eta" + str(eta) + "lamda" + str(lamda) + ".png"
     plt.savefig(filename)
@@ -644,19 +647,23 @@ def Main():
         #       "search" for searching the best hyperparameters
         #       "default" for default training
         #       "default1" for default training but using only one batch
-        mode = "default1"#"sanitycheck"#"default"#"sanitycheck"
+        mode = "search"#"default1"#"sanitycheck"
 
         # "yes" - > implement batch normalization
         # "no"  - > do not implement
-        batch_norm_mode = "yes"
+        batch_norm_mode = "no"
+
+        # "default" -> default weight initialization
+        # "he"      -> He weight initialization
+        init_mode = "he"
 
         #constants
         # lamda = regularization parameter
         lamda = 5e-4#1e-6 #0 = noregularization
         # eta = learning rate
-        eta = 0.05
+        eta = 0.0159
         n_batch = 100
-        epochs = 100
+        epochs = 30
         rho = 0.9
         lr_decay = 0.95 #0 = nodecay
         epsilon = 1e-16 #small constant to prevent divisions by zerp
@@ -681,7 +688,7 @@ def Main():
         # b1 = bias K1 x 1
         # W2 = weights K2 x K1
         # b2 = bias K2 x 1
-        W, b = InitParams(nodes)
+        W, b = InitParams(nodes, init_mode)
 
 
         if mode == "check":
@@ -724,9 +731,11 @@ def Main():
 
             # es = [0.013, 0.014, 0.015, 0.016, 0.017, 0.018, 0.019, 0.02, 0.021]
             # ls = [-8, -7, -6, -5, -4, -3]
+            es = [0.05, 0.1, 0.5]
+            ls = [5e-4]
 
-            es = [0.0155, 0.0157, 0.0159, 0.0161, 0.0163, 0.0165]
-            ls = [1e-4, 5e-4, 1e-5, 5e-5]
+            # es = [0.0155, 0.0157, 0.0159, 0.0161, 0.0163, 0.0165]
+            # ls = [1e-4, 5e-4, 1e-5, 5e-5]
             # es = [0.0155, 0.0156, 0.0157, 0.0158, 0.0159, 0.016, 0.0161, 0.0162, 0.0163, 0.0164, 0.0165]
             # ls = [5e-6, 6e-6, 7e-6, 8e-6, 9e-6, 1e-5, 2e-5, 3e-5, 4e-5, 5e-5]
             # es = [0.0166, 0.0167, 0.0168, 0.0169, 0.017, 0.0171, 0.0172, 0.0173, 0.0174, 0.0175, 0.0176, 0.0177]
@@ -738,13 +747,17 @@ def Main():
                     # lamda = 10 ** thel
                     lamda = thel
 
-                    W, b = InitParams(nodes)
+                    W, b = InitParams(nodes, init_mode)
 
                     Wstar, bstar, allW, allb, movav_mean, movav_var = MiniBatchGD(Xtrain, Ytrain,
                                                                     {"eta": eta, "n_batch":n_batch, "epochs": epochs,
                                                                      "lamda": lamda, "rho": rho, "lr_decay": lr_decay,
                                                                      "W": W, "b": b, "epsilon": epsilon, "nodes": nodes,
                                                                      "batch_norm_mode": batch_norm_mode})
+
+                    PlotLoss(Xtrain, Ytrain, Xval, Yval, allW, allb, lamda, eta, epsilon, mode, batch_norm_mode,
+                            **{"movav_mean": movav_mean, "movav_var": movav_var})
+
                     #calculate accuracy on test dataset
                     valid_accuracy = ComputeAccuracy(Xval, yval, Wstar, bstar, epsilon, batch_norm_mode,
                                                      **{"movav_mean":movav_mean, "movav_var": movav_var})
