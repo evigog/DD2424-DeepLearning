@@ -90,7 +90,7 @@ def GetDimensions(X):
 
 def InitParams(nodes, init_mode):
     #same seed every time for testing purposes
-    np.random.seed(123)
+    # np.random.seed(123)
     W = []
     b = []
     for i, nodesnum in enumerate(nodes):
@@ -651,19 +651,19 @@ def Main():
 
         # "yes" - > implement batch normalization
         # "no"  - > do not implement
-        batch_norm_mode = "no"
+        batch_norm_mode = "yes"
 
         # "default" -> default weight initialization
         # "he"      -> He weight initialization
-        init_mode = "he"
+        init_mode = "default"
 
         #constants
         # lamda = regularization parameter
-        lamda = 5e-4#1e-6 #0 = noregularization
+        lamda = 1e-6 #0 = noregularization
         # eta = learning rate
-        eta = 0.0159
+        eta = 0.004
         n_batch = 100
-        epochs = 30
+        epochs = 10
         rho = 0.9
         lr_decay = 0.95 #0 = nodecay
         epsilon = 1e-16 #small constant to prevent divisions by zerp
@@ -681,8 +681,8 @@ def Main():
         # nodes[0] -> nodes in input
         # nodes[1] -> nodes in hidden layer
         # nodes[2] -> nodes in next layer
-        nodes = [d, 50, 30, 10]
-        # nodes = [d, 50, 10]
+        nodes = [d, 50, 30, 10] # defines the 3-layer network
+        # nodes = [d, 50, 10] # defines the 2-layer network
 
         # W1 = weights K1 x d
         # b1 = bias K1 x 1
@@ -715,33 +715,26 @@ def Main():
             #search for best parameters
             Xtrain, Xval, Xtest = ToZeroMean(Xtrain, Xval, Xtest)
 
-            #uniformly log-initialize etas in the range found with coarse search
+
             #different experiment initializations
 
-            # es = np.random.uniform(-3, -1, 15)
-            # ls = np.random.uniform(-7, 3, 10)
+            # es = [0.001, 0.005, 0.01, 0.05, 0.1]
+            # ls = [1e-10, 1e-9, 1e-8, 1e-7, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1, 10, 100]
 
-            # es = np.random.uniform(-3, -2, 15)
-            # ls = np.random.uniform(-8, -2, 10)
+            # es = np.random.uniform(-4, -2, 10)
+            # es.sort()
+            # ls = np.random.uniform(-9, -3, 10)
+            # ls.sort()
 
-            # es = np.random.uniform(0.013, 0.026, 15)
-            # es = np.sort(es)
-            # ls = np.random.uniform(-6, -1, 10)
-            # ls = np.sort(ls)
+            # es = [0.001, 0.003, 0.005, 0.008, 0.01, 0.03, 0.05, 0.08, 0.1]
+            # es = [0.004]
+            # ls = [1e-9, 1e-8, 1e-7, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2]
 
-            # es = [0.013, 0.014, 0.015, 0.016, 0.017, 0.018, 0.019, 0.02, 0.021]
-            # ls = [-8, -7, -6, -5, -4, -3]
-            es = [0.05, 0.1, 0.5]
-            ls = [5e-4]
+            es = [1e-8, 1e-6, 1e-4, 1e-3, 1e-2, 1e-1]
+            ls = [1e-6]
 
-            # es = [0.0155, 0.0157, 0.0159, 0.0161, 0.0163, 0.0165]
-            # ls = [1e-4, 5e-4, 1e-5, 5e-5]
-            # es = [0.0155, 0.0156, 0.0157, 0.0158, 0.0159, 0.016, 0.0161, 0.0162, 0.0163, 0.0164, 0.0165]
-            # ls = [5e-6, 6e-6, 7e-6, 8e-6, 9e-6, 1e-5, 2e-5, 3e-5, 4e-5, 5e-5]
-            # es = [0.0166, 0.0167, 0.0168, 0.0169, 0.017, 0.0171, 0.0172, 0.0173, 0.0174, 0.0175, 0.0176, 0.0177]
-            # ls = [5e-5, 7e-5]
             for thee in es:
-                # eta = 5 * (10 ** thee)
+                # eta = 10 ** thee
                 eta = thee
                 for thel in ls:
                     # lamda = 10 ** thel
@@ -762,7 +755,7 @@ def Main():
                     valid_accuracy = ComputeAccuracy(Xval, yval, Wstar, bstar, epsilon, batch_norm_mode,
                                                      **{"movav_mean":movav_mean, "movav_var": movav_var})
                     #save in file
-                    file = open("coarsecosts.txt", "a")
+                    file = open("twonodesearch.txt", "a")
                     file.write("\n" + "eta: " + str(eta) + "    lamda: " + str(lamda) +
                                "    validation accuracy: " + str(valid_accuracy))
                     file.close()
