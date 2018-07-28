@@ -56,6 +56,14 @@ class RNN:
         self.W = np.random.normal(0, 0.01, (self.m, self.m))
         self.V = np.random.normal(0, 0.01, (self.K, self.m))
 
+    def BasicForwPass(self, hprev, xt):
+        at = np.dot(self.W, hprev) + np.dot(self.U, xt) + self.b
+        ht = np.tanh(at)
+        ot = np.dot(self.V, ht) + self.c
+        pt = SoftMax(ot)
+
+        return (at,ht,ot,pt)
+
     def SynthText(self, x0, h0, seq_length):
         txt = np.zeros((self.K, seq_length))
 
@@ -63,10 +71,7 @@ class RNN:
         xt = x0
 
         for t in range(seq_length):
-            at = np.dot(self.W, hprev) + np.dot(self.U, xt) + self.b
-            ht = np.tanh(at)
-            ot = np.dot(self.V, ht) + self.c
-            pt = SoftMax(ot)
+            at, ht, ot, pt = self.BasicForwPass(hprev, xt)
 
             #update hprev
             hprev = ht
@@ -82,6 +87,23 @@ class RNN:
             txt[:, t] = xt.flatten()
 
         return txt
+
+    def ForwardPass(self, X, Y, h0, seq_length):
+        Loss = 0
+
+        hprev = h0
+        for t in range(seq_length):
+            yt = Y[:, t].reshape(-1, 1)
+            xt = X[:,t].reshape(-1,1)
+            at, ht, ot, pt = self.BasicForwPass(hprev, xt)
+            Loss = Loss - np.log(np.dot(yt.transpose(), pt))
+            print(Loss)
+
+            hprev = ht
+
+
+        return Loss
+
 
 
 def Main():
@@ -106,6 +128,18 @@ def Main():
     for i in range(seq_length):
         readable_text += OneHotToChar(txt[:,i], ind_to_char)
     print(readable_text)
+
+    X_chars = book_data[0: seq_length]
+    X = np.zeros((theRNN.K, seq_length))
+    Y_chars = book_data[1: seq_length + 1]
+    Y = np.zeros((theRNN.K, seq_length))
+
+    for i in range(seq_length):
+        X[:, i] = CharToOneHot(X_chars[i], char_to_ind, letter_length).flatten()
+        Y[:, i] = CharToOneHot(Y_chars[i], char_to_ind, letter_length).flatten()
+
+    Loss = theRNN.ForwardPass(X, Y, h0, seq_length)
+    print(Loss)
 
 Main()
 
