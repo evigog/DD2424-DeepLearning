@@ -38,6 +38,42 @@ def SoftMax(z):
     e = np.exp(z - np.max(z))
     return((e / e.sum(axis = 0)))
 
+class RNNgrads:
+    def __init__(self, theRNN, seq_length):
+        # biases
+        self.b = np.zeros(np.shape(theRNN.b))
+        self.c = np.zeros(np.shape(theRNN.c))
+
+        # weights
+        self.U = np.zeros(np.shape(theRNN.U))
+        self.W = np.zeros(np.shape(theRNN.W))
+        self.V = np.zeros(np.shape(theRNN.V))
+
+        #intermediary
+        self.a = np.zeros((theRNN.m, seq_length))
+        self.h = np.zeros((theRNN.m, seq_length + 1))  # because we also store the initial inner state
+
+    def Compute(self, theRNN, seq_length, X, Y, a, h, p):
+        grad_o = p-Y #for all timesteps
+
+        #these gradients can be calculated straighforwardly
+        for t in range(seq_length):
+            self.c += grad_o[:, t].reshape(-1, 1)
+            self.V += np.dot(grad_o[:, t].reshape(-1, 1), h[:, t + 1].reshape(1, -1))
+
+        #for last ht - as h has one more column than the others
+        self.h[:, -1] = np.dot(grad_o[:, -1].reshape(1, -1), theRNN.V)
+
+        #for all previous timesteps
+        for t in range(seq_length-1, -1, -1):
+            self.a[:, t] = np.dot(self.h[:, t+1].reshape(1, -1), np.diag(1 - np.power(np.tanh(a[:, t]), 2)))
+            self.h[:, t] = np.dot(grad_o[:, t].reshape(1, -1), theRNN.V) + np.dot(self.a[:, t].reshape(1, -1), theRNN.W)
+
+            self.b += self.a[:, t].reshape(-1,1)
+            self.U += np.dot(self.a[:, t].reshape(-1,1), X[:,t].reshape(1, -1))
+            self.W += np.dot(self.a[:, t].reshape(-1,1), self.h[:, t].reshape(1,-1))
+
+
 class RNN:
     def __init__(self, letter_length, hidden_length):
 
@@ -90,19 +126,25 @@ class RNN:
 
     def ForwardPass(self, X, Y, h0, seq_length):
         Loss = 0
+        a = np.zeros((self.m, seq_length))
+        h = np.zeros((self.m, seq_length+1)) #because we also store the initial inner state
+        p = np.zeros((self.K, seq_length))
 
+        h[:,0] = h0.flatten()
         hprev = h0
         for t in range(seq_length):
             yt = Y[:, t].reshape(-1, 1)
             xt = X[:,t].reshape(-1,1)
             at, ht, ot, pt = self.BasicForwPass(hprev, xt)
             Loss = Loss - np.log(np.dot(yt.transpose(), pt))
-            print(Loss)
 
             hprev = ht
 
+            a[:, t] = at.flatten()
+            h[:, t+1] = ht.flatten()
+            p[:, t] = pt.flatten()
 
-        return Loss
+        return Loss, a, h, p
 
 
 
@@ -138,8 +180,11 @@ def Main():
         X[:, i] = CharToOneHot(X_chars[i], char_to_ind, letter_length).flatten()
         Y[:, i] = CharToOneHot(Y_chars[i], char_to_ind, letter_length).flatten()
 
-    Loss = theRNN.ForwardPass(X, Y, h0, seq_length)
+    Loss, a, h, p = theRNN.ForwardPass(X, Y, h0, seq_length)
     print(Loss)
+
+    theGrads = RNNgrads(theRNN, seq_length)
+    theGrads.Compute(theRNN, seq_length, X, Y, a, h, p)
 
 Main()
 
