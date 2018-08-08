@@ -109,13 +109,13 @@ class NUMgrads:
                 for i in range(np.shape(grad)[0]):
                     for j in range(np.shape(grad)[1]):
                         diff = abs(grad[i, j] - num_grad[i, j]) / max(1e-6, (abs(grad[i, j]) + abs(num_grad[i, j])))
-                        if (diff > 1e-6):
+                        if (diff > 1e-5):
                             print(i, j, grad[i, j], num_grad[i, j], diff)
             #else if grad == 1D
             else:
                 for i in range(np.size(grad)):
                     diff = abs(grad[i] - num_grad[i]) / max(1e-6, (abs(grad[i]) + abs(num_grad[i])))
-                    if (diff > 1e-6):
+                    if (diff > 1e-5):
                         print(i, grad[i], num_grad[i], diff)
 
 
@@ -144,17 +144,39 @@ class RNNgrads:
             self.c += grad_o[:, t].reshape(-1, 1)
             self.V += np.dot(grad_o[:, t].reshape(-1, 1), h[:, t + 1].reshape(1, -1))
 
+        #splitting self.h in order to handle the fact that is has one more state than self.a
+        grad_h = deepcopy(self.h[:, 1:])
+        grad_h0 = deepcopy(self.h[:, 0])
+
         #for last ht - as h has one more column than the others
-        self.h[:, -1] = np.dot(grad_o[:, -1].reshape(1, -1), theRNN.V)
+        grad_h[:, -1] = np.dot(grad_o[:, -1], theRNN.V)
+        self.a[:, -1] = np.dot(grad_h[:, -1], np.diag(1 - np.power(np.tanh(a[:, -1]), 2)))
 
         #for all previous timesteps
-        for t in range(seq_length-1, -1, -1):
-            self.a[:, t] = np.dot(self.h[:, t+1].reshape(1, -1), np.diag(1 - np.power(np.tanh(a[:, t]), 2)))
-            self.h[:, t] = np.dot(grad_o[:, t].reshape(1, -1), theRNN.V) + np.dot(self.a[:, t].reshape(1, -1), theRNN.W)
+        for t in range(seq_length-2, -1, -1):
+            grad_h[:, t] = np.dot(grad_o[:, t], theRNN.V) + np.dot(self.a[:, t+1], theRNN.W)
+            self.a[:, t] = np.dot(grad_h[:, t], np.diag(1 - np.power(np.tanh(a[:, t]), 2)))
 
-            self.b += self.a[:, t].reshape(-1,1)
-            self.U += np.dot(self.a[:, t].reshape(-1,1), X[:,t].reshape(1, -1))
-            self.W += np.dot(self.a[:, t].reshape(-1,1), self.h[:, t].reshape(1,-1))
+        #for the first grad_h
+        #grad_h0 I do not do nothing - it is already initialized with zeros
+
+        for t in range(seq_length):
+            self.b += self.a[:, t].reshape(-1, 1)
+            self.U += np.dot(self.a[:, t].reshape(-1, 1), X[:, t].reshape(1, -1))
+            if t > 0:
+                self.W += np.dot(self.a[:, t].reshape(-1, 1), grad_h[:, t-1].reshape(1, -1))
+            else:
+                self.W += np.dot(self.a[:, t].reshape(-1, 1), grad_h0.reshape(1, -1))
+
+
+        #     self.a[:, t] = np.dot(self.h[:, t+1].reshape(1, -1), np.diag(1 - np.power(np.tanh(a[:, t]), 2)))
+        #     self.h[:, t] = np.dot(grad_o[:, t].reshape(1, -1), theRNN.V) + np.dot(self.a[:, t].reshape(1, -1), theRNN.W)
+        #
+        #     self.b += self.a[:, t].reshape(-1,1)
+        #     self.U += np.dot(self.a[:, t].reshape(-1,1), X[:,t].reshape(1, -1))
+        #     self.W += np.dot(self.a[:, t].reshape(-1,1), self.h[:, t].reshape(1,-1))
+
+        pass
 
 
 class RNN:
