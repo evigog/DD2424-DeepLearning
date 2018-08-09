@@ -134,7 +134,7 @@ class RNNgrads:
 
         #intermediary
         self.a = np.zeros((theRNN.m, seq_length))
-        self.h = np.zeros((theRNN.m, seq_length + 1))  # because we also store the initial inner state
+        self.h = np.zeros((theRNN.m, seq_length))
 
     def Compute(self, theRNN, seq_length, X, Y, a, h, p):
         grad_o = p-Y #for all timesteps
@@ -144,39 +144,29 @@ class RNNgrads:
             self.c += grad_o[:, t].reshape(-1, 1)
             self.V += np.dot(grad_o[:, t].reshape(-1, 1), h[:, t + 1].reshape(1, -1))
 
-        #splitting self.h in order to handle the fact that is has one more state than self.a
-        grad_h = deepcopy(self.h[:, 1:])
-        grad_h0 = deepcopy(self.h[:, 0])
-
         #for last ht - as h has one more column than the others
-        grad_h[:, -1] = np.dot(grad_o[:, -1], theRNN.V)
-        self.a[:, -1] = np.dot(grad_h[:, -1], np.diag(1 - np.power(np.tanh(a[:, -1]), 2)))
+        self.h[:, -1] = np.dot(grad_o[:, -1], theRNN.V)
+        self.a[:, -1] = np.dot(self.h[:, -1], np.diag(1 - np.power(np.tanh(a[:, -1]), 2)))
 
         #for all previous timesteps
         for t in range(seq_length-2, -1, -1):
-            grad_h[:, t] = np.dot(grad_o[:, t], theRNN.V) + np.dot(self.a[:, t+1], theRNN.W)
-            self.a[:, t] = np.dot(grad_h[:, t], np.diag(1 - np.power(np.tanh(a[:, t]), 2)))
-
-        #for the first grad_h
-        #grad_h0 I do not do nothing - it is already initialized with zeros
+            self.h[:, t] = np.dot(grad_o[:, t], theRNN.V) + np.dot(self.a[:, t+1], theRNN.W)
+            self.a[:, t] = np.dot(self.h[:, t], np.diag(1 - np.power(np.tanh(a[:, t]), 2)))
 
         for t in range(seq_length):
             self.b += self.a[:, t].reshape(-1, 1)
             self.U += np.dot(self.a[:, t].reshape(-1, 1), X[:, t].reshape(1, -1))
-            if t > 0:
-                self.W += np.dot(self.a[:, t].reshape(-1, 1), grad_h[:, t-1].reshape(1, -1))
-            else:
-                self.W += np.dot(self.a[:, t].reshape(-1, 1), grad_h0.reshape(1, -1))
+            self.W += np.dot(self.a[:, t].reshape(-1, 1), h[:, t].reshape(1, -1))
 
-
-        #     self.a[:, t] = np.dot(self.h[:, t+1].reshape(1, -1), np.diag(1 - np.power(np.tanh(a[:, t]), 2)))
-        #     self.h[:, t] = np.dot(grad_o[:, t].reshape(1, -1), theRNN.V) + np.dot(self.a[:, t].reshape(1, -1), theRNN.W)
-        #
-        #     self.b += self.a[:, t].reshape(-1,1)
-        #     self.U += np.dot(self.a[:, t].reshape(-1,1), X[:,t].reshape(1, -1))
-        #     self.W += np.dot(self.a[:, t].reshape(-1,1), self.h[:, t].reshape(1,-1))
-
+    def Clip(self):
+        fieldnames = list(self.__dict__.keys())
+        for f in range(len(fieldnames)):
+            if fieldnames[f] != 'a' and fieldnames[f] != 'h':
+                grad = getattr(self, fieldnames[f])
+                grad = np.maximum(np.minimum(grad, 5), -5)
+                setattr(self, fieldnames[f], grad)
         pass
+
 
 
 class RNN:
@@ -199,6 +189,15 @@ class RNN:
             self.W = np.random.normal(0, 0.01, (self.m, self.m))
             self.V = np.random.normal(0, 0.01, (self.K, self.m))
 
+            #adagrad ms
+            self.m_b = np.zeros((self.m, 1))
+            self.m_c = np.zeros((self.K, 1))
+
+            self.m_U = np.zeros((self.m, self.K))
+            self.m_W = np.zeros((self.m, self.m))
+            self.m_V = np.zeros((self.K, self.m))
+
+
         #constructor used for deep copying
         else:
             # dimensionality of RNN's hidden state
@@ -216,6 +215,15 @@ class RNN:
             self.W = kwargs['W']
             self.V = kwargs['V']
 
+            #adagrad ms
+            self.m_b = kwargs['m_b']
+            self.m_c = kwargs['m_c']
+
+            self.m_U = kwargs['m_U']
+            self.m_W = kwargs['m_W']
+            self.m_V = kwargs['m_V']
+
+
 
     # this is copied (but modified) from stackoverflow
     def __deepcopy__(self, memo):  # memo is a dict of id's to copies
@@ -229,7 +237,12 @@ class RNN:
                 c=deepcopy(self.c, memo),
                 U=deepcopy(self.U, memo),
                 W=deepcopy(self.W, memo),
-                V=deepcopy(self.V, memo))
+                V=deepcopy(self.V, memo),
+                m_b=deepcopy(self.m_b, memo),
+                m_c=deepcopy(self.m_c, memo),
+                m_U=deepcopy(self.m_U, memo),
+                m_W=deepcopy(self.m_W, memo),
+                m_V=deepcopy(self.m_V, memo))
             memo[id_self] = _copy
         return _copy
 
@@ -288,13 +301,28 @@ class RNN:
 
         return Loss, a, h, p
 
+    def AdaGrad(self, theGrads, eta, e):
+        fieldnames = list(theGrads.__dict__.keys())
+        for f in range(len(fieldnames)):
+            if fieldnames[f] != 'a' and fieldnames[f] != 'h':
+                weight_matrix = getattr(self, fieldnames[f])
+                grad = getattr(theGrads, fieldnames[f])
+                m = getattr(self, "m_"+fieldnames[f])
+
+                m = m + np.power(grad, 2)
+                weight_matrix = weight_matrix - (eta * grad)/np.sqrt(m + e)
+
+                setattr(self, fieldnames[f], weight_matrix)
+                setattr(self, "m_"+fieldnames[f], m)
+
+        pass
 
 
 def Main():
     #RNN sequence length
     seq_length = 25# given
     #dimensionality of hidden state
-    hidden_length = 5#to check grads #100# given for default training
+    hidden_length = 100# given for default training #5#to check grads #
 
     # learning rate
     eta = 0.1  # default
@@ -304,34 +332,66 @@ def Main():
     letter_length = vocab_size
     theRNN = RNN(letter_length, hidden_length)
 
-    x0 = CharToOneHot(".", char_to_ind, letter_length)
-    h0 = np.zeros((theRNN.m, 1))
-    txt = theRNN.SynthText(x0, h0, seq_length)
 
-    readable_text = ""
-    for i in range(seq_length):
-        readable_text += OneHotToChar(txt[:,i], ind_to_char)
-    print(readable_text)
+    # #synthesize readable text
+    # x0 = CharToOneHot(".", char_to_ind, letter_length)
+    # h0 = np.zeros((theRNN.m, 1))
+    # txt = theRNN.SynthText(x0, h0, seq_length)
+    #
+    # readable_text = ""
+    # for i in range(seq_length):
+    #     readable_text += OneHotToChar(txt[:,i], ind_to_char)
+    # print(readable_text)
+    # ############################
 
-    X_chars = book_data[0: seq_length]
-    X = np.zeros((theRNN.K, seq_length))
-    Y_chars = book_data[1: seq_length + 1]
-    Y = np.zeros((theRNN.K, seq_length))
+    # X_chars = book_data[0: seq_length]
+    # X = np.zeros((theRNN.K, seq_length))
+    # Y_chars = book_data[1: seq_length + 1]
+    # Y = np.zeros((theRNN.K, seq_length))
+    #
+    # for i in range(seq_length):
+    #     X[:, i] = CharToOneHot(X_chars[i], char_to_ind, letter_length).flatten()
+    #     Y[:, i] = CharToOneHot(Y_chars[i], char_to_ind, letter_length).flatten()
+    #
+    # h0 = np.zeros((theRNN.m, 1))
+    # Loss, a, h, p = theRNN.ForwardPass(X, Y, h0, seq_length)
+    #
+    # theGrads = RNNgrads(theRNN, seq_length)
+    # theGrads.Compute(theRNN, seq_length, X, Y, a, h, p)
 
-    for i in range(seq_length):
-        X[:, i] = CharToOneHot(X_chars[i], char_to_ind, letter_length).flatten()
-        Y[:, i] = CharToOneHot(Y_chars[i], char_to_ind, letter_length).flatten()
+    # #check grads
+    # theNumGrads = NUMgrads(theRNN)
+    # theNumGrads.Compute(theRNN, seq_length, X, Y, h=1e-4)
+    # theNumGrads.Compare(theGrads)
+    # ############################
 
-    Loss, a, h, p = theRNN.ForwardPass(X, Y, h0, seq_length)
+    # theGrads.Clip()
 
-    theGrads = RNNgrads(theRNN, seq_length)
-    theGrads.Compute(theRNN, seq_length, X, Y, a, h, p)
+    #high level trainining loop
+    e = 0 #where we are in the book
+    hprev = np.zeros((theRNN.m, 1)) #initializing hidden state
 
-    theNumGrads = NUMgrads(theRNN)
-    theNumGrads.Compute(theRNN, seq_length, X, Y, h=1e-4)
-    theNumGrads.Compare(theGrads)
+    for l in range(10):
+        X_chars = book_data[e: e+seq_length]
+        X = np.zeros((theRNN.K, seq_length))
+        Y_chars = book_data[e+1: e+seq_length+1]
+        Y = np.zeros((theRNN.K, seq_length))
+
+        for i in range(seq_length):
+            X[:, i] = CharToOneHot(X_chars[i], char_to_ind, letter_length).flatten()
+            Y[:, i] = CharToOneHot(Y_chars[i], char_to_ind, letter_length).flatten()
+
+        Loss, a, h, p = theRNN.ForwardPass(X, Y, hprev, seq_length)
+        theGrads = RNNgrads(theRNN, seq_length)
+        theGrads.Compute(theRNN, seq_length, X, Y, a, h, p)
+        theGrads.Clip()
+
+        theRNN.AdaGrad(theGrads, eta, 1e-8)
 
 
+        hprev = h[:, -1].reshape(-1, 1)
+        e += seq_length
+        pass
 
 Main()
 
