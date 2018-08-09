@@ -38,6 +38,21 @@ def SoftMax(z):
     e = np.exp(z - np.max(z))
     return((e / e.sum(axis = 0)))
 
+def PlotLoss(smooth_losses):
+    steps = []
+    for i,loss in enumerate(smooth_losses):
+        steps.append((i+1)*100)
+
+    plt.plot(steps, smooth_losses)
+    plt.xlabel("Steps")
+    plt.ylabel("Loss")
+    # plt.legend()
+    plt.title("Loss development over two epochs")#, using eta " + str(eta) + " and lambda " + str(lamda), y=1.03)
+    # plt.show()
+    filename = "loss.png"
+    plt.savefig(filename)
+    print("saved file", filename)
+
 class NUMgrads:
     def __init__(self, theRNN):
         # biases
@@ -368,30 +383,50 @@ def Main():
     # theGrads.Clip()
 
     #high level trainining loop
-    e = 0 #where we are in the book
+    epoch = 0
     hprev = np.zeros((theRNN.m, 1)) #initializing hidden state
 
-    for l in range(10):
-        X_chars = book_data[e: e+seq_length]
-        X = np.zeros((theRNN.K, seq_length))
-        Y_chars = book_data[e+1: e+seq_length+1]
-        Y = np.zeros((theRNN.K, seq_length))
+    #keep track of smooth loss in order to plot that later
+    smooth_losses = []
 
-        for i in range(seq_length):
-            X[:, i] = CharToOneHot(X_chars[i], char_to_ind, letter_length).flatten()
-            Y[:, i] = CharToOneHot(Y_chars[i], char_to_ind, letter_length).flatten()
+    while epoch < 2:
+        e = 0  # where we are in the book
+        step = 0 # step in epoch
+        while e+seq_length+1 < len(book_data):
+            X_chars = book_data[e: e+seq_length]
+            X = np.zeros((theRNN.K, seq_length))
+            Y_chars = book_data[e+1: e+seq_length+1]
+            Y = np.zeros((theRNN.K, seq_length))
 
-        Loss, a, h, p = theRNN.ForwardPass(X, Y, hprev, seq_length)
-        theGrads = RNNgrads(theRNN, seq_length)
-        theGrads.Compute(theRNN, seq_length, X, Y, a, h, p)
-        theGrads.Clip()
+            for i in range(seq_length):
+                X[:, i] = CharToOneHot(X_chars[i], char_to_ind, letter_length).flatten()
+                Y[:, i] = CharToOneHot(Y_chars[i], char_to_ind, letter_length).flatten()
 
-        theRNN.AdaGrad(theGrads, eta, 1e-8)
+            Loss, a, h, p = theRNN.ForwardPass(X, Y, hprev, seq_length)
+            theGrads = RNNgrads(theRNN, seq_length)
+            theGrads.Compute(theRNN, seq_length, X, Y, a, h, p)
+            theGrads.Clip()
+
+            theRNN.AdaGrad(theGrads, eta, 1e-8)
 
 
-        hprev = h[:, -1].reshape(-1, 1)
-        e += seq_length
-        pass
+            hprev = h[:, -1].reshape(-1, 1)
+            e += seq_length
+
+            if step == 0 and epoch == 0:
+                smooth_loss = Loss
+            else:
+                smooth_loss = 0.999 * smooth_loss + 0.001 * Loss
+                if step % 100 == 0:
+                    print("Epoch: ", epoch, " Step: ", step, " Smooth loss: ", smooth_loss)
+                    smooth_losses.append(int(smooth_loss))
+
+
+            step += 1
+
+        epoch += 1
+
+    PlotLoss(smooth_losses)
 
 Main()
 
