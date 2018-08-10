@@ -6,7 +6,7 @@ from copy import deepcopy
 
 def DataPrep():
     #read book contents
-    book_fname = 'goblet_book.txt';
+    book_fname = 'goblet_book.txt'
     with open(book_fname) as f:
         book_data = f.read()
 
@@ -47,11 +47,25 @@ def PlotLoss(smooth_losses):
     plt.xlabel("Steps")
     plt.ylabel("Loss")
     # plt.legend()
-    plt.title("Loss development over two epochs")#, using eta " + str(eta) + " and lambda " + str(lamda), y=1.03)
+    plt.title("Loss development over two epochs")
     # plt.show()
     filename = "loss.png"
     plt.savefig(filename)
     print("saved file", filename)
+
+def PrintText(txt, ind_to_char, step, loss, smooth_loss):
+    readable_text = ""
+
+    for i in range(np.shape(txt)[1]):
+        readable_text += OneHotToChar(txt[:,i], ind_to_char)
+    print(readable_text)
+
+    # save in file
+    file = open("synthtext.txt", "a")
+    file.write("\n\nStep: " + str(step) + " Loss: " + str(loss) + " Smoothed loss: " + str(smooth_loss))
+    file.write("\n" + readable_text)
+    file.close()
+
 
 class NUMgrads:
     def __init__(self, theRNN):
@@ -93,18 +107,6 @@ class NUMgrads:
                 attr_try[i] += h
                 Loss2, dummy1, dummy2, dummy3 = RNN_try.ForwardPass(X, Y, h0, seq_length)
                 grad[i] = (Loss2 - Loss1) / (2 * h)
-
-    #given code in matlab
-    # function grad = ComputeGradNum(X, Y, f, RNN, h) #f einai to sygkekrimeno fieldname #h einai
-    #     n = numel(RNN.(f));
-    #     grad = zeros(size(RNN.(f)));
-    #     hprev = zeros(size(RNN.W, 1), 1);
-    #     for i=1:nRNN_try = RNN;
-    #         RNN_try.(f)(i) = RNN.(f)(i) - h;
-    #         l1 = ComputeLoss(X, Y, RNN_try, hprev);
-    #         RNN_try.(f)(i) = RNN.(f)(i) + h;
-    #         l2 = ComputeLoss(X, Y, RNN_try, hprev);
-    #         grad(i) = (l2 - l1) / (2 * h)
 
 
     def Compute(self, theRNN, seq_length, X, Y, h):
@@ -176,10 +178,10 @@ class RNNgrads:
     def Clip(self):
         fieldnames = list(self.__dict__.keys())
         for f in range(len(fieldnames)):
-            if fieldnames[f] != 'a' and fieldnames[f] != 'h':
-                grad = getattr(self, fieldnames[f])
-                grad = np.maximum(np.minimum(grad, 5), -5)
-                setattr(self, fieldnames[f], grad)
+            # if fieldnames[f] != 'a' and fieldnames[f] != 'h':
+            grad = getattr(self, fieldnames[f])
+            grad = np.maximum(np.minimum(grad, 5), -5)
+            setattr(self, fieldnames[f], grad)
         pass
 
 
@@ -277,13 +279,13 @@ class RNN:
         xt = x0
 
         for t in range(seq_length):
-            at, ht, ot, pt = self.BasicForwPass(hprev, xt)
+            at, ht, ot, pt = self.BasicForwPass(hprev, xt.reshape(-1, 1))
 
             #update hprev
             hprev = ht
 
             #given pt select next input xt
-            cp = np.cumsum(pt)
+            cp = np.cumsum(pt, axis=0)
             a = random.uniform(0, 1)
             char_idx = np.where(cp - a > 0)[0][0] #double indexing because np.where returns a tuple with a single element
             #convert character index to one hot representation
@@ -338,6 +340,8 @@ def Main():
     seq_length = 25# given
     #dimensionality of hidden state
     hidden_length = 100# given for default training #5#to check grads #
+    #synthesized text length
+    text_length = 200
 
     # learning rate
     eta = 0.1  # default
@@ -348,16 +352,7 @@ def Main():
     theRNN = RNN(letter_length, hidden_length)
 
 
-    # #synthesize readable text
-    # x0 = CharToOneHot(".", char_to_ind, letter_length)
-    # h0 = np.zeros((theRNN.m, 1))
-    # txt = theRNN.SynthText(x0, h0, seq_length)
-    #
-    # readable_text = ""
-    # for i in range(seq_length):
-    #     readable_text += OneHotToChar(txt[:,i], ind_to_char)
-    # print(readable_text)
-    # ############################
+    #Code to check gradients
 
     # X_chars = book_data[0: seq_length]
     # X = np.zeros((theRNN.K, seq_length))
@@ -380,18 +375,21 @@ def Main():
     # theNumGrads.Compare(theGrads)
     # ############################
 
-    # theGrads.Clip()
+
+    #keeping track of best model
+    best_loss = 100
 
     #high level trainining loop
     epoch = 0
-    hprev = np.zeros((theRNN.m, 1)) #initializing hidden state
+    total_steps = 0
 
     #keep track of smooth loss in order to plot that later
     smooth_losses = []
 
-    while epoch < 2:
+    while epoch < 10:
         e = 0  # where we are in the book
         step = 0 # step in epoch
+        hprev = np.zeros((theRNN.m, 1))  # initializing hidden state
         while e+seq_length+1 < len(book_data):
             X_chars = book_data[e: e+seq_length]
             X = np.zeros((theRNN.K, seq_length))
@@ -409,24 +407,49 @@ def Main():
 
             theRNN.AdaGrad(theGrads, eta, 1e-8)
 
-
-            hprev = h[:, -1].reshape(-1, 1)
-            e += seq_length
+            #choosing the best model based on the actual loss
+            if Loss < best_loss:
+                best_loss = Loss
+                best_init_char = X[:, 0]
+                best_hprev = hprev
+                bestRNN = deepcopy(theRNN)
+                print("Heya! Found new best model!! Epoch " + str(epoch) + ", step " + str(step))
 
             if step == 0 and epoch == 0:
                 smooth_loss = Loss
             else:
                 smooth_loss = 0.999 * smooth_loss + 0.001 * Loss
                 if step % 100 == 0:
-                    print("Epoch: ", epoch, " Step: ", step, " Smooth loss: ", smooth_loss)
+                    # print("Epoch: ", epoch, " Step: ", step, " Smooth loss: ", smooth_loss)
                     smooth_losses.append(int(smooth_loss))
+                #uncoment in case we want to choose the best model based on the smooth loss
+                # if smooth_loss < best_loss:
+                #     best_loss = smooth_loss
+                #     best_init_char = X[:, 0]
+                #     best_hprev = hprev
+                #     bestRNN = deepcopy(theRNN)
+                #     print("Heya! Found new best model!! Epoch " + str(epoch) + ", step " + str(step) + " smooth loss: " + str(smooth_loss))
+            if total_steps % 10000 == 0 and total_steps <= 100001:
+                # synthesize readable text
+                # x0 = CharToOneHot(".", char_to_ind, letter_length) #dummy first character
+                x0 = X[:, 0] #first character taken from last read sequence
+                txt = theRNN.SynthText(x0, hprev, text_length)
+                PrintText(txt, ind_to_char, total_steps, Loss, smooth_loss)
 
+            hprev = h[:, -1].reshape(-1, 1)
+            e += seq_length
 
             step += 1
+            total_steps += 1
 
         epoch += 1
 
-    PlotLoss(smooth_losses)
+    #Plot loss graph - commented out for long training
+    # PlotLoss(smooth_losses)
+
+    #Synthesize text for best found model
+    txt = bestRNN.SynthText(best_init_char, best_hprev, 1000)
+    PrintText(txt, ind_to_char, total_steps, best_loss, best_loss)
 
 Main()
 
